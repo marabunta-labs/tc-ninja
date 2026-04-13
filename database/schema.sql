@@ -2,7 +2,7 @@
 create extension if not exists vector;
 
 -- 2. Crear la tabla de documentos
-create table documents (
+create or replace table documents (
   id bigserial primary key,
   platform text,
   content text,
@@ -11,31 +11,35 @@ create table documents (
 );
 
 -- 3. Crear una función de búsqueda (para el backend más adelante)
-create or replace function match_documents (
+DROP FUNCTION IF EXISTS match_documents;
+
+CREATE OR REPLACE FUNCTION match_documents (
   query_embedding vector(384),
   match_threshold float,
-  match_count int
+  match_count int,
+  filter_platforms text[] -- <--- Nuevo parámetro: array de plataformas
 )
-returns table (
+RETURNS TABLE (
   id bigint,
-  platform text,
   content text,
+  platform text,
   metadata jsonb,
   similarity float
 )
-language plpgsql
-as $$
-begin
-  return query
-  select
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  RETURN QUERY
+  SELECT
     documents.id,
-    documents.platform,
     documents.content,
+    documents.platform,
     documents.metadata,
-    1 - (documents.embedding <=> query_embedding) as similarity
-  from documents
-  where 1 - (documents.embedding <=> query_embedding) > match_threshold
-  order by documents.embedding <=> query_embedding
-  limit match_count;
-end;
+    1 - (documents.embedding <=> query_embedding) AS similarity
+  FROM documents
+  WHERE 1 - (documents.embedding <=> query_embedding) > match_threshold
+    AND documents.platform = ANY(filter_platforms) -- <--- Filtramos aquí mismo
+  ORDER BY similarity DESC
+  LIMIT match_count;
+END;
 $$;
