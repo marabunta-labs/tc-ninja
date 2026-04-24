@@ -24,3 +24,18 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+@keyframes marquee {
+  0% { transform: translateX(0%); }
+  100% { transform: translateX(-100%); }
+}
+
+.animate-marquee {
+  /* 30s es la velocidad. Usa linear para que sea constante */
+  animation: marquee 30s linear infinite;
+}
+
+/* Pausa ambas pistas a la vez cuando el ratón entra en el contenedor padre */
+.group-marquee:hover .animate-marquee {
+  animation-play-state: paused;
+}

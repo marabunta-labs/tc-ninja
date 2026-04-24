@@ -1,13 +1,15 @@
 # --- Core para IA y Embeddings ---
-sentence-transformers==3.0.1
+sentence-transformers
 # Forzamos la rama 1.x para evitar el crash de compatibilidad
 numpy<2.0.0
 torch>=2.0.0
 
 # --- Conectividad y Datos ---
-supabase==2.4.0
-requests==2.31.0
-python-dotenv==1.0.1
+supabase
+requests
+python-dotenv
 
 # --- Scraping y Utilidades ---
-beautifulsoup4==4.12.3
+beautifulsoup4
+
+langchain-text-splitters

@@ -1,9 +1,11 @@
 import os
 import requests
+import datetime
 import hashlib
 from sentence_transformers import SentenceTransformer
 from supabase import create_client
 from dotenv import load_dotenv
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 # Esto permite que funcione en local con .env y en GitHub con sus Secrets
 load_dotenv() 
@@ -21,9 +23,14 @@ SOURCES = {
     "X-Twitter": "https://r.jina.ai/https://x.com/en/tos"
 }
 
-def get_chunks(text, size=1000):
-    # Divide el texto en fragmentos de ~1000 caracteres
-    return [text[i:i+size] for i in range(0, len(text), size)]
+def get_chunks(text, size=1000, overlap=150):
+    # Corta de forma inteligente priorizando párrafos y puntos, manteniendo 150 caracteres de solapamiento
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=size,
+        chunk_overlap=overlap,
+        separators=["\n\n", "\n", ".", " ", ""]
+    )
+    return splitter.split_text(text)
 
 def process_source(name, url):
     print(f"🥷 Ninja analizando: {name}...")
@@ -35,8 +42,7 @@ def process_source(name, url):
     full_text = response.text
     chunks = get_chunks(full_text)
 
-    # Limpiamos datos antiguos de esta red para no duplicar
-    supabase.table("documents").delete().eq("platform", name).execute()
+    current_date = datetime.date.today().isoformat()
 
     for i, chunk in enumerate(chunks):
         # Generar vector
@@ -47,7 +53,12 @@ def process_source(name, url):
             "platform": name,
             "content": chunk,
             "embedding": embedding,
-            "metadata": {"chunk_index": i, "source_url": url}
+            "metadata": {
+                "chunk_index": i, 
+                "source_url": url,
+                "fetch_date": current_date,
+                "version": "2026-04" 
+            }
         }
         supabase.table("documents").insert(data).execute()
 
