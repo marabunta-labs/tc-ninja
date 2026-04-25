@@ -34,7 +34,7 @@ T&C Ninja translates complex legal jargon from social media platforms into plain
 
 - **Frontend**: Next.js 16 + React 19 + Tailwind CSS 4
 - **Backend**: FastAPI with streaming responses
-- **Embeddings**: `paraphrase-multilingual-MiniLM-L12-v2` (384-dim vectors)
+- **Embeddings**: `paraphrase-multilingual-MiniLM-L12-v2` via HuggingFace Inference API (no local model)
 - **LLM**: Google Gemini 3.1 Flash Lite
 - **Database**: Supabase with pgvector for semantic search
 - **Package Management**: uv (Python), npm (frontend)
@@ -161,6 +161,7 @@ SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_KEY=your-anon-key
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 GEMINI_API_KEY=your-gemini-api-key
+HF_TOKEN=your-huggingface-token
 ```
 
 ### Database Setup

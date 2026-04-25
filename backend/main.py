@@ -23,8 +23,8 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+import httpx
 from supabase import create_client
-from sentence_transformers import SentenceTransformer
 import google.generativeai as genai
 from dotenv import load_dotenv
 from typing import List
@@ -57,8 +57,30 @@ app.add_middleware(
 )
 
 supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
-model = SentenceTransformer("paraphrase-multilingual-MiniLM-L12-v2")
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+
+HF_TOKEN = os.getenv("HF_TOKEN")
+HF_EMBED_URL = (
+    "https://router.huggingface.co/hf-inference/models/"
+    "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+    "/pipeline/feature-extraction"
+)
+
+async def embed(text: str) -> list:
+    """Embed *text* using the HuggingFace Inference Providers API."""
+    async with httpx.AsyncClient() as client:
+        response = await client.post(
+            HF_EMBED_URL,
+            headers={"Authorization": f"Bearer {HF_TOKEN}"},
+            json={"inputs": text},
+            timeout=30.0,
+        )
+        response.raise_for_status()
+        result = response.json()
+        # Feature-extraction returns [[...floats...]] for a single string
+        if isinstance(result[0], list):
+            return result[0]
+        return result
 
 
 @app.middleware("http")
@@ -248,7 +270,7 @@ async def ask_ninja(request: ChatRequest):
     last_user_message = request.messages[-1].content
 
     t0 = time.perf_counter()
-    query_vector = model.encode(last_user_message).tolist()
+    query_vector = await embed(last_user_message)
     logger.info("embed %.0f ms", (time.perf_counter() - t0) * 1000)
 
     final_platforms = request.platforms
@@ -406,8 +428,14 @@ async def ask_ninja(request: ChatRequest):
 
         async def error_gen():
             yield f"Ninja out of service: {error_message}"
-            
+
         return StreamingResponse(error_gen(), media_type="text/plain")
+
+@app.get("/health")
+async def health_check():
+    """Simple health check endpoint to verify that the backend is running."""
+
+    return {"status": "ok", "ninja": "awake"}
 
 
 if __name__ == "__main__":

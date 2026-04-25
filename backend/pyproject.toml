@@ -7,13 +7,11 @@ dependencies = [
     "fastapi",
     "uvicorn>=0.30.0,<0.40.0",
     "supabase",
-    "sentence-transformers",
-    "numpy<2.0.0",
+    "httpx",
     "google-generativeai",
     "python-dotenv",
     "pydantic",
     "pytest",
-    "httpx",
 ]
 
 [project.scripts]

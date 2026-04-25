@@ -3,7 +3,7 @@ import type { PlatformConfig } from "./types";
 
 export type { PlatformConfig };
 
-export const PLATFORMS: PlatformConfig[] = sharedConfig.platforms;
+export const PLATFORMS: PlatformConfig[] = sharedConfig.platforms as unknown as PlatformConfig[];
 
 export const PLATFORM_IDS = PLATFORMS.map((p) => p.id);
 
