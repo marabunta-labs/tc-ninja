@@ -1,0 +1,20 @@
+[project]
+name = "tc-ninja-backend"
+version = "1.0.0"
+description = "T&C Ninja - RAG backend for analyzing social media Terms & Conditions"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi",
+    "uvicorn>=0.30.0,<0.40.0",
+    "supabase",
+    "sentence-transformers",
+    "numpy<2.0.0",
+    "google-generativeai",
+    "python-dotenv",
+    "pydantic",
+    "pytest",
+    "httpx",
+]
+
+[project.scripts]
+serve = "uvicorn main:app --host 0.0.0.0 --port 8000 --reload"

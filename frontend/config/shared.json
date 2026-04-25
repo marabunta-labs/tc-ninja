@@ -1,0 +1,363 @@
+{
+  "languages": ["es", "en"],
+  "platforms": [
+    {
+      "id": "Instagram",
+      "color": "#E1306C",
+      "scrapeUrls": {
+        "es": [
+          "https://r.jina.ai/https://help.instagram.com/581066165581870?locale=es_ES",
+          "https://r.jina.ai/https://privacycenter.instagram.com/policy?locale=es_ES"
+        ],
+        "en": [
+          "https://r.jina.ai/https://help.instagram.com/581066165581870?locale=en_US",
+          "https://r.jina.ai/https://privacycenter.instagram.com/policy?locale=en_US"
+        ]
+      },
+      "icon": {
+        "viewBox": "0 0 24 24",
+        "fill": "none",
+        "stroke": "currentColor",
+        "strokeWidth": 2,
+        "strokeLinecap": "round",
+        "strokeLinejoin": "round",
+        "elements": [
+          { "tag": "rect", "width": "20", "height": "20", "x": "2", "y": "2", "rx": "5", "ry": "5" },
+          { "tag": "path", "d": "M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z" },
+          { "tag": "line", "x1": "17.5", "x2": "17.51", "y1": "6.5", "y2": "6.5" }
+        ]
+      },
+      "redFlags": {
+        "en": [
+          "They require a worldwide, royalty-free license to use any photo you upload.",
+          "They can delete your account and photos at any time without notice.",
+          "They track your activity on other websites if you use their built-in browser.",
+          "Your metadata (location, photo time) is stored and analyzed."
+        ],
+        "es": [
+          "Te exigen una licencia mundial y libre de regalías para usar cualquier foto que subas.",
+          "Pueden eliminar tu cuenta y tus fotos en cualquier momento sin previo aviso.",
+          "Rastrean tu actividad en otras webs si usas su navegador integrado.",
+          "Tus metadatos (ubicación, hora de la foto) se guardan y analizan."
+        ]
+      }
+    },
+    {
+      "id": "TikTok",
+      "color": "#00F2EA",
+      "scrapeUrls": {
+        "es": [
+          "https://r.jina.ai/https://www.tiktok.com/legal/page/row/terms-of-service/es",
+          "https://r.jina.ai/https://www.tiktok.com/legal/page/row/privacy-policy/es",
+          "https://r.jina.ai/https://www.tiktok.com/community-guidelines/es"
+        ],
+        "en": [
+          "https://r.jina.ai/https://www.tiktok.com/legal/page/row/terms-of-service/en",
+          "https://r.jina.ai/https://www.tiktok.com/legal/page/row/privacy-policy/en",
+          "https://r.jina.ai/https://www.tiktok.com/community-guidelines/en"
+        ]
+      },
+      "icon": {
+        "viewBox": "0 0 24 24",
+        "fill": "currentColor",
+        "elements": [
+          { "tag": "path", "d": "M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-2.88 2.5 2.89 2.89 0 0 1-2.89-2.89 2.89 2.89 0 0 1 2.89-2.89c.28 0 .54.04.79.1V9.01a6.27 6.27 0 0 0-.79-.05 6.34 6.34 0 0 0-6.34 6.34 6.34 6.34 0 0 0 6.34 6.34 6.34 6.34 0 0 0 6.34-6.34V8.75a8.18 8.18 0 0 0 4.76 1.52V6.84a4.84 4.84 0 0 1-1-.15Z" }
+        ]
+      },
+      "redFlags": {
+        "en": [
+          "They collect your keystroke patterns and typing rhythm.",
+          "They can share your personal data with group companies in China.",
+          "They analyze objects and faces in your videos for profiling.",
+          "They store your precise location via GPS and nearby Wi-Fi networks."
+        ],
+        "es": [
+          "Recopilan tus patrones de pulsación de teclas y el ritmo con el que escribes.",
+          "Pueden compartir tus datos personales con empresas de su grupo en China.",
+          "Analizan los objetos y rostros que aparecen en tus vídeos para perfilado.",
+          "Guardan tu ubicación precisa mediante GPS y redes Wi-Fi cercanas."
+        ]
+      }
+    },
+    {
+      "id": "X-Twitter",
+      "color": "#1DA1F2",
+      "scrapeUrls": {
+        "es": [
+          "https://r.jina.ai/https://x.com/es/tos",
+          "https://r.jina.ai/https://x.com/es/privacy"
+        ],
+        "en": [
+          "https://r.jina.ai/https://x.com/en/tos",
+          "https://r.jina.ai/https://x.com/en/privacy"
+        ]
+      },
+      "icon": {
+        "viewBox": "0 0 24 24",
+        "fill": "currentColor",
+        "elements": [
+          { "tag": "path", "d": "M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" }
+        ]
+      },
+      "redFlags": {
+        "en": [
+          "They have the right to use your posts to train AI models.",
+          "You are solely legally responsible if your post violates the law.",
+          "They track the links you click within the platform.",
+          "They can suspend your account if they consider your behavior 'toxic'."
+        ],
+        "es": [
+          "Tienen derecho a usar tus tuits para entrenar modelos de Inteligencia Artificial.",
+          "Eres el único responsable legal si un tuit tuyo infringe la ley.",
+          "Rastrean los enlaces en los que haces clic dentro de la plataforma.",
+          "Pueden suspender tu cuenta si consideran que tu comportamiento es 'tóxico'."
+        ]
+      }
+    },
+    {
+      "id": "Facebook",
+      "color": "#1877F2",
+      "scrapeUrls": {
+        "es": [
+          "https://r.jina.ai/https://www.facebook.com/legal/terms?locale=es_ES",
+          "https://r.jina.ai/https://www.facebook.com/privacy/policy/?locale=es_ES"
+        ],
+        "en": [
+          "https://r.jina.ai/https://www.facebook.com/legal/terms?locale=en_US",
+          "https://r.jina.ai/https://www.facebook.com/privacy/policy/?locale=en_US"
+        ]
+      },
+      "icon": {
+        "viewBox": "0 0 24 24",
+        "fill": "currentColor",
+        "elements": [
+          { "tag": "path", "d": "M9.101 23.691v-7.98H6.627v-3.667h2.474v-1.58c0-4.085 1.848-5.978 5.858-5.978.401 0 1.09.044 1.613.115v3.146c-.427-.044-.72-.065-.91-.065-1.283 0-1.81.49-1.81 1.762v2.6h3.593l-.607 3.667h-2.986v7.98C18.97 22.92 24 17.592 24 12c0-6.627-5.373-12-12-12S0 5.373 0 12c0 5.628 3.875 10.35 9.101 11.691Z" }
+        ]
+      },
+      "redFlags": {
+        "en": [
+          "They get a non-exclusive, transferable license to everything you post.",
+          "They can track your activity on third-party apps and websites via Meta Pixel.",
+          "They share data with Meta companies (Instagram, WhatsApp) without separate consent.",
+          "They can use your name and profile photo in ads targeted to your contacts."
+        ],
+        "es": [
+          "Obtienen una licencia no exclusiva y transferible sobre todo lo que publicas.",
+          "Pueden rastrear tu actividad en apps y webs de terceros mediante el Pixel de Facebook.",
+          "Comparten datos con empresas de Meta (Instagram, WhatsApp) sin consentimiento separado.",
+          "Pueden usar tu nombre y foto de perfil en anuncios dirigidos a tus contactos."
+        ]
+      }
+    },
+    {
+      "id": "YouTube",
+      "color": "#FF0000",
+      "scrapeUrls": {
+        "es": [
+          "https://r.jina.ai/https://www.youtube.com/t/terms?hl=es",
+          "https://r.jina.ai/https://policies.google.com/privacy?hl=es"
+        ],
+        "en": [
+          "https://r.jina.ai/https://www.youtube.com/t/terms?hl=en",
+          "https://r.jina.ai/https://policies.google.com/privacy?hl=en"
+        ]
+      },
+      "icon": {
+        "viewBox": "0 0 24 24",
+        "fill": "currentColor",
+        "elements": [
+          { "tag": "path", "d": "M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" }
+        ]
+      },
+      "redFlags": {
+        "en": [
+          "By uploading content, you grant Google a worldwide license to use, modify, and distribute it.",
+          "They can show ads on your content without compensation.",
+          "They collect your search and watch history to build a detailed profile.",
+          "They can remove your content or account without detailed explanation."
+        ],
+        "es": [
+          "Al subir contenido, concedes a Google una licencia mundial para usarlo, modificarlo y distribuirlo.",
+          "Pueden mostrar publicidad sobre tu contenido sin compensación.",
+          "Recopilan tu historial de búsqueda y visualización para construir un perfil detallado.",
+          "Pueden eliminar tu contenido o cuenta sin explicación detallada."
+        ]
+      }
+    },
+    {
+      "id": "LinkedIn",
+      "color": "#0A66C2",
+      "scrapeUrls": {
+        "es": [
+          "https://r.jina.ai/https://www.linkedin.com/legal/user-agreement?lang=es",
+          "https://r.jina.ai/https://www.linkedin.com/legal/privacy-policy?lang=es"
+        ],
+        "en": [
+          "https://r.jina.ai/https://www.linkedin.com/legal/user-agreement?lang=en",
+          "https://r.jina.ai/https://www.linkedin.com/legal/privacy-policy?lang=en"
+        ]
+      },
+      "icon": {
+        "viewBox": "0 0 24 24",
+        "fill": "currentColor",
+        "elements": [
+          { "tag": "path", "d": "M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z" }
+        ]
+      },
+      "redFlags": {
+        "en": [
+          "They get a broad license to all content you publish on the platform.",
+          "They may use your data to train generative AI models.",
+          "They share your professional activity with recruiters and advertisers.",
+          "Your profile can be indexed by search engines by default."
+        ],
+        "es": [
+          "Obtienen una licencia amplia sobre todo el contenido que publicas en la plataforma.",
+          "Pueden usar tus datos para entrenar modelos de IA generativa.",
+          "Comparten tu actividad profesional con reclutadores y anunciantes.",
+          "Tu perfil puede ser indexado por motores de búsqueda por defecto."
+        ]
+      }
+    },
+    {
+      "id": "Snapchat",
+      "color": "#FFFC00",
+      "scrapeUrls": {
+        "es": [
+          "https://r.jina.ai/https://snap.com/es-ES/terms",
+          "https://r.jina.ai/https://snap.com/es-ES/privacy/privacy-policy"
+        ],
+        "en": [
+          "https://r.jina.ai/https://snap.com/en-US/terms",
+          "https://r.jina.ai/https://snap.com/en-US/privacy/privacy-policy"
+        ]
+      },
+      "icon": {
+        "viewBox": "0 0 24 24",
+        "fill": "currentColor",
+        "elements": [
+          { "tag": "path", "d": "M12.206.793c.99 0 4.347.276 5.93 3.821.529 1.193.403 3.219.299 4.847l-.003.06c-.012.18-.022.345-.03.51.075.045.203.09.401.09.3-.016.659-.12.922-.214.04-.012.06-.012.06-.012.16-.045.24-.06.36-.06.12 0 .27.03.42.09.27.134.434.33.434.58 0 .21-.12.42-.36.53-.75.36-1.35.51-1.8.66-.225.065-.344.1-.404.15-.105.12-.12.27-.12.45s.015.36.075.54c.12.33.27.6.465.91.75 1.14 1.62 1.62 2.16 1.8.18.06.27.18.27.27 0 .03-.015.06-.045.12-.15.3-.57.585-1.29.72-.12.03-.21.18-.24.33-.03.12-.06.21-.09.27-.06.12-.21.24-.705.24-.3 0-.585-.045-.915-.09-.45-.06-.975-.12-1.635-.12-.195 0-.39.015-.585.03-1.08.09-1.89.99-2.46 1.65-.36.42-.615.66-.825.66s-.465-.24-.825-.66c-.585-.675-1.395-1.59-2.46-1.65-.195-.015-.39-.03-.585-.03-.66 0-1.185.06-1.635.12-.33.045-.615.09-.915.09-.48 0-.645-.12-.705-.24-.03-.06-.06-.15-.09-.27-.03-.15-.12-.3-.24-.33-.72-.135-1.14-.42-1.29-.72C.315 18.21.3 18.18.3 18.15c0-.09.09-.21.27-.27.54-.18 1.41-.66 2.16-1.8.195-.31.345-.58.465-.91.06-.18.075-.36.075-.54s-.015-.33-.12-.45c-.06-.05-.179-.085-.404-.15-.45-.15-1.05-.3-1.8-.66-.24-.11-.36-.32-.36-.53 0-.25.165-.446.435-.58.15-.06.3-.09.42-.09.12 0 .2.015.36.06 0 0 .02 0 .06.012.264.094.623.198.922.214.198 0 .326-.045.401-.09-.008-.165-.018-.33-.03-.51l-.003-.06c-.104-1.628-.23-3.654.299-4.847C7.853 1.069 11.216.793 12.206.793z" }
+        ]
+      },
+      "redFlags": {
+        "en": [
+          "They get rights to use, reproduce, and modify your public Snaps.",
+          "They collect precise geolocation data even when the app is in the background.",
+          "Face filters analyze and store biometric data from your face.",
+          "They can share data with advertising partners for advanced targeting."
+        ],
+        "es": [
+          "Obtienen derechos para usar, reproducir y modificar tus Snaps públicos.",
+          "Recopilan datos de geolocalización precisa incluso cuando la app está en segundo plano.",
+          "Los filtros de cara analizan y almacenan datos biométricos de tu rostro.",
+          "Pueden compartir datos con socios publicitarios para segmentación avanzada."
+        ]
+      }
+    },
+    {
+      "id": "WhatsApp",
+      "color": "#25D366",
+      "scrapeUrls": {
+        "es": [
+          "https://r.jina.ai/https://www.whatsapp.com/legal/terms-of-service?lang=es",
+          "https://r.jina.ai/https://www.whatsapp.com/legal/privacy-policy?lang=es"
+        ],
+        "en": [
+          "https://r.jina.ai/https://www.whatsapp.com/legal/terms-of-service?lang=en",
+          "https://r.jina.ai/https://www.whatsapp.com/legal/privacy-policy?lang=en"
+        ]
+      },
+      "icon": {
+        "viewBox": "0 0 24 24",
+        "fill": "currentColor",
+        "elements": [
+          { "tag": "path", "d": "M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 0 1 2.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0 0 12.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 0 0 5.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 0 0-3.48-8.413z" }
+        ]
+      },
+      "redFlags": {
+        "en": [
+          "They share metadata with Meta (who, when, how often you communicate).",
+          "They store your complete contact list on their servers.",
+          "Cloud backups are NOT end-to-end encrypted by default.",
+          "They can block your account if you use unofficial versions of the app."
+        ],
+        "es": [
+          "Comparten metadatos con Meta (quién, cuándo, con qué frecuencia te comunicas).",
+          "Almacenan tu lista de contactos completa en sus servidores.",
+          "Las copias de seguridad en la nube NO están cifradas de extremo a extremo por defecto.",
+          "Pueden bloquear tu cuenta si usas versiones no oficiales de la app."
+        ]
+      }
+    },
+    {
+      "id": "Telegram",
+      "color": "#26A5E4",
+      "scrapeUrls": {
+        "es": [
+          "https://r.jina.ai/https://telegram.org/tos?setln=es",
+          "https://r.jina.ai/https://telegram.org/privacy?setln=es"
+        ],
+        "en": [
+          "https://r.jina.ai/https://telegram.org/tos?setln=en",
+          "https://r.jina.ai/https://telegram.org/privacy?setln=en"
+        ]
+      },
+      "icon": {
+        "viewBox": "0 0 24 24",
+        "fill": "currentColor",
+        "elements": [
+          { "tag": "path", "d": "M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.479.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z" }
+        ]
+      },
+      "redFlags": {
+        "en": [
+          "Regular chats are NOT end-to-end encrypted (only secret chats are).",
+          "They store all your messages in the cloud indefinitely.",
+          "Public groups and channels are indexed and accessible via search engines.",
+          "They can cooperate with authorities by providing IPs and phone numbers."
+        ],
+        "es": [
+          "Los chats normales NO están cifrados de extremo a extremo (solo los chats secretos).",
+          "Almacenan todos tus mensajes en la nube indefinidamente.",
+          "Los grupos públicos y canales son indexados y accesibles vía buscadores.",
+          "Pueden cooperar con autoridades proporcionando IPs y números de teléfono."
+        ]
+      }
+    },
+    {
+      "id": "BeReal",
+      "color": "#000000",
+      "scrapeUrls": {
+        "es": [
+          "https://r.jina.ai/https://bereal.com/es/terms",
+          "https://r.jina.ai/https://bereal.com/es/privacy"
+        ],
+        "en": [
+          "https://r.jina.ai/https://bereal.com/en/terms",
+          "https://r.jina.ai/https://bereal.com/en/privacy"
+        ]
+      },
+      "icon": {
+        "viewBox": "0 0 24 24",
+        "fill": "currentColor",
+        "elements": [
+          { "tag": "path", "d": "M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm-.846 5.625h3.401c2.205 0 3.576 1.063 3.576 2.858 0 1.21-.67 2.103-1.82 2.478v.054c1.395.268 2.205 1.259 2.205 2.72 0 2.009-1.459 3.14-3.98 3.14h-3.382V5.624zm1.633 4.92h1.608c1.34 0 2.063-.54 2.063-1.563 0-.964-.634-1.49-1.82-1.49h-1.85v3.054zm0 5.165h1.85c1.34 0 2.08-.58 2.08-1.68 0-1.062-.74-1.63-2.143-1.63h-1.787v3.31z" }
+        ]
+      },
+      "redFlags": {
+        "en": [
+          "They get a worldwide, sublicensable license to your photos and content.",
+          "They collect precise location data every time you post a BeReal.",
+          "They store photo metadata including time, location, and device.",
+          "They can use your photos in marketing campaigns without compensation."
+        ],
+        "es": [
+          "Obtienen una licencia mundial y sublicenciable sobre tus fotos y contenido.",
+          "Recopilan datos de ubicación precisa cada vez que publicas un BeReal.",
+          "Almacenan metadatos de las fotos incluyendo hora, ubicación y dispositivo.",
+          "Pueden usar tus fotos en campañas de marketing sin compensación."
+        ]
+      }
+    }
+  ]
+}

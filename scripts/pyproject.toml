@@ -1,0 +1,18 @@
+[project]
+name = "tc-ninja-scripts"
+version = "1.0.0"
+description = "T&C Ninja - Scraping and embedding pipeline"
+requires-python = ">=3.11"
+dependencies = [
+    "sentence-transformers",
+    "numpy<2.0.0",
+    "torch>=2.0.0",
+    "supabase",
+    "requests",
+    "python-dotenv",
+    "beautifulsoup4",
+    "langchain-text-splitters",
+]
+
+[project.scripts]
+update-terms = "update_terms:main"
