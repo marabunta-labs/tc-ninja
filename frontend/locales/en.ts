@@ -56,6 +56,7 @@ export default {
     subtitle: "Smart AI",
   },
   footer: {
-    version: "Ninja Legal v2.0",
+    version: "T&C Ninja v1.0",
+    createdBy: "Created by",
   },
 } as const;

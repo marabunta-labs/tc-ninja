@@ -29,7 +29,7 @@ export default function Home() {
   const menuRef = useRef<HTMLDivElement>(null);
   const [responseMode, setResponseMode] = useState<'explanation' | 'legal'>('explanation');
   const [isModeMenuOpen, setIsModeMenuOpen] = useState(false);
-  const [language, setLanguage] = useState<Locale>('es');
+  const [language, setLanguage] = useState<Locale>('en');
   const t = getTranslations(language);
 
   const LANGUAGES = [
@@ -313,6 +313,19 @@ const getBaseFlags = () => {
     }
   ];
 
+  useEffect(() => {
+    const pingBackend = async () => {
+      try {
+        await fetch(`${backendUrl}/health`, { method: 'GET' });
+        console.log('Backend health check successful');
+      } catch (error) {
+        console.error('Error during backend health check:', error);
+      }
+    };
+
+    pingBackend();
+  }, []);
+
   return (
     <main className="min-h-screen bg-[#09090b] text-zinc-100 p-4 md:p-12 font-sans">
       <div className="max-w-4xl mx-auto flex flex-col min-h-[80vh]">
@@ -369,7 +382,7 @@ const getBaseFlags = () => {
         {/* Header Section */}
         <header className="flex flex-col items-center mb-8 text-center">
           <div className="bg-emerald-500/10 p-3 rounded-2xl mb-4">
-            <Shield className="w-10 h-10 text-emerald-500" />
+            <span className="text-4xl">🥷</span>
           </div>
           <h1 className="text-3xl font-black tracking-tight mb-2">T&C NINJA</h1>
           <div className="text-center space-y-2">
@@ -769,7 +782,16 @@ const getBaseFlags = () => {
           </div>
           
           <p className="text-[10px] text-center text-zinc-600 mt-4 uppercase tracking-[0.2em]">
-            {t.footer.version} • {selectedPlatforms.length} {t.platforms.activePlatforms}
+            {t.footer.version} • 
+            <span className="mx-1">{t.footer.createdBy}</span>
+            <a 
+              href="https://marabunta-labs.vercel.app/" 
+              target="_blank" 
+              rel="noopener noreferrer" 
+              className="inline-block bg-zinc-800 text-zinc-300 px-3 py-1 rounded-full hover:bg-zinc-700 transition-colors"
+            >
+              marabunta
+            </a> • {selectedPlatforms.length} {t.platforms.activePlatforms}
           </p>
         </div>
       </div>

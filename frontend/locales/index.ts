@@ -40,7 +40,7 @@ export type Translations = {
     legal: { title: string; description: string };
   };
   autoDetection: { label: string; subtitle: string };
-  footer: { version: string };
+  footer: { version: string; createdBy: string };
   redFlags: Record<string, readonly string[]>;
 };
 
