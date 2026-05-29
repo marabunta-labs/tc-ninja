@@ -1,12 +1,11 @@
 "use client";
-import { useState, useRef, useEffect } from 'react';
-import { Shield, Send, MessageSquare, AlertTriangle, Scale, CheckCircle2, User, Search, Zap, Eye, Trash2, Camera, ChevronLeft, ChevronRight } from 'lucide-react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { Send, AlertTriangle, Scale, CheckCircle2, User, Zap, Eye, Trash2, Camera } from 'lucide-react';
 import { Check, ChevronDown } from 'lucide-react';
-import axios from 'axios';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { getTranslations, type Locale } from '../locales';
-import { PLATFORM_IDS, getPlatform } from '../config/platforms';
+import { PLATFORM_IDS } from '../config/platforms';
 import { getPlatformIcon } from '../config/platforms/icons';
 
 const QUICK_ACTION_ICONS = [
@@ -63,13 +62,13 @@ export default function Home() {
     }
   };
 
-const getBaseFlags = () => {
+const getBaseFlags = useCallback(() => {
     const platforms = selectedPlatforms;
     if (platforms.length === 0) return [];
     
     const redFlags = t.redFlags as Record<string, readonly string[]>;
     const flagsByPlatform = platforms.map(p => redFlags[p]);
-    const maxLength = Math.max(...flagsByPlatform.map(f => f.length));
+    const maxLength = Math.max(...flagsByPlatform.map(f => f?.length ?? 0));
     let interleaved: { platform: string; text: string }[] = [];
 
     for (let i = 0; i < maxLength; i++) {
@@ -85,9 +84,9 @@ const getBaseFlags = () => {
       base = [...base, ...interleaved];
     }
     return base;
-  };
+  }, [selectedPlatforms, t.redFlags]);
 
-  const baseRedFlags = getBaseFlags();
+  const baseRedFlags = useMemo(() => getBaseFlags(), [getBaseFlags]);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -111,7 +110,7 @@ const getBaseFlags = () => {
     
     animationId = requestAnimationFrame(step);
     return () => cancelAnimationFrame(animationId);
-  }, [isDragging, isHovered, baseRedFlags]);
+  }, [isDragging, isHovered, baseRedFlags.length]);
 
   const handleMouseDown = (e: React.MouseEvent) => {
     setIsDragging(true);
@@ -141,13 +140,38 @@ const getBaseFlags = () => {
   const handleMouseUpOrLeave = () => {
     setIsDragging(false);
   };
+
+  // Touch support for mobile browsers
+  const handleTouchStart = (e: React.TouchEvent) => {
+    setIsDragging(true);
+    setStartX(e.touches[0].pageX);
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (!isDragging || !scrollRef.current) return;
+
+    const el = scrollRef.current;
+    const x = e.touches[0].pageX;
+    const walk = (startX - x) * 1.5;
+
+    let newScrollLeft = el.scrollLeft + walk;
+
+    if (newScrollLeft <= 0) {
+      newScrollLeft += el.scrollWidth / 2;
+    } else if (newScrollLeft >= el.scrollWidth / 2) {
+      newScrollLeft -= el.scrollWidth / 2;
+    }
+
+    el.scrollLeft = newScrollLeft;
+    setStartX(x);
+  };
+
+  const handleTouchEnd = () => {
+    setIsDragging(false);
+  };
   
   const chatEndRef = useRef<HTMLDivElement>(null);
   const lastMessageRef = useRef<HTMLDivElement>(null);
-
-  const scrollToBottom = () => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  };
 
   useEffect(() => {
     if (loading) {
@@ -199,17 +223,25 @@ const getBaseFlags = () => {
     try {
       if (autoDetect) {
         setStatusMessage(t.chat.analyzingIntent); 
-        const detectRes = await axios.post(`${backendUrl}/detect-context`, {
-          message: currentQuestion,
-          current_platforms: selectedPlatforms,
-          language: language
-        }, { headers: { 'X-Request-Id': reqId }, signal: abortController.signal });
+        const detectRes = await fetch(`${backendUrl}/detect-context`, {
+          method: 'POST',
+          headers: reqHeaders,
+          body: JSON.stringify({
+            message: currentQuestion,
+            current_platforms: selectedPlatforms,
+            language: language
+          }),
+          signal: abortController.signal,
+        });
+
+        if (!detectRes.ok) throw new Error('Detection failed');
+        const detectData = await detectRes.json();
 
         // Always use the platforms the backend resolved, message or not
-        activePlatforms = detectRes.data.platforms;
+        activePlatforms = detectData.platforms;
         setSelectedPlatforms(activePlatforms);
-        if (detectRes.data.message) {
-          setMessages(prev => [...prev, { role: 'system', content: detectRes.data.message }]);
+        if (detectData.message) {
+          setMessages(prev => [...prev, { role: 'system', content: detectData.message }]);
         }
       }
 
@@ -265,9 +297,9 @@ const getBaseFlags = () => {
             isFirstChunk = false;
           } else {
             setMessages(prev => {
-              const newMessages = [...prev];
-              newMessages[newMessages.length - 1].content = text;
-              return newMessages;
+              const updated = [...prev];
+              updated[updated.length - 1] = { ...updated[updated.length - 1], content: text };
+              return updated;
             });
           }
         }
@@ -317,14 +349,13 @@ const getBaseFlags = () => {
     const pingBackend = async () => {
       try {
         await fetch(`${backendUrl}/health`, { method: 'GET' });
-        console.log('Backend health check successful');
-      } catch (error) {
-        console.error('Error during backend health check:', error);
+      } catch {
+        // Backend not reachable — silently ignore
       }
     };
 
     pingBackend();
-  }, []);
+  }, [backendUrl]);
 
   return (
     <main className="min-h-screen bg-[#09090b] text-zinc-100 p-4 md:p-12 font-sans">
@@ -457,6 +488,9 @@ const getBaseFlags = () => {
                       onMouseDown={handleMouseDown}
                       onMouseMove={handleMouseMove}
                       onMouseUp={handleMouseUpOrLeave}
+                      onTouchStart={handleTouchStart}
+                      onTouchMove={handleTouchMove}
+                      onTouchEnd={handleTouchEnd}
                       className={`flex gap-4 overflow-x-auto py-2 no-scrollbar select-none transition-colors ${
                         isDragging ? 'cursor-grabbing' : 'cursor-grab'
                       }`}

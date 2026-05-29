@@ -17,7 +17,7 @@ describe("Home page component", () => {
 
   it("renders the language selector", () => {
     render(<Home />);
-    const langBtn = screen.getByText("es");
+    const langBtn = screen.getByText("en");
     expect(langBtn).toBeInTheDocument();
   });
 
@@ -32,16 +32,16 @@ describe("Home page component", () => {
   it("switches language updates UI text", () => {
     render(<Home />);
     // Open language menu
-    const langBtn = screen.getByText("es");
+    const langBtn = screen.getByText("en");
     fireEvent.click(langBtn);
 
-    // Select English
-    const englishOption = screen.getByText("English");
-    fireEvent.click(englishOption);
+    // Select Spanish
+    const spanishOption = screen.getByText("Español");
+    fireEvent.click(spanishOption);
 
-    // Verify UI updated to English
-    expect(screen.getByText("Did you know...")).toBeInTheDocument();
-    expect(screen.getByText("Common queries")).toBeInTheDocument();
+    // Verify UI updated to Spanish
+    expect(screen.getByText("Sabías que...")).toBeInTheDocument();
+    expect(screen.getByText("Consultas habituales")).toBeInTheDocument();
   });
 
   it("renders carousel with red flags", () => {

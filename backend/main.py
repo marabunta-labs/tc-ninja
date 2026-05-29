@@ -33,6 +33,12 @@ from prompts import SYSTEM_PROMPTS, DECISION_PROMPT, MODE_INSTRUCTIONS, OVERLOAD
 
 load_dotenv()
 
+# Validate required environment variables at startup
+_REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_KEY", "GEMINI_API_KEY", "HF_TOKEN"]
+_missing = [v for v in _REQUIRED_ENV if not os.getenv(v)]
+if _missing:
+    raise RuntimeError(f"Missing required environment variables: {', '.join(_missing)}")
+
 _SHARED_CONFIG_PATH = Path(__file__).parent.parent / "frontend" / "config" / "shared.json"
 _shared_config = json.loads(_SHARED_CONFIG_PATH.read_text())
 
@@ -48,12 +54,15 @@ SLOW_THRESHOLD_WARN_MS = 5_000    # warn in logs
 SLOW_THRESHOLD_ERROR_MS = 30_000  # log as ERROR and tell the client
 
 app = FastAPI(title="T&C Ninja API")
+
+_ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(",")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Content-Type", "X-Request-Id"],
 )
 
 supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
@@ -150,7 +159,7 @@ class DetectRequest(BaseModel):
     current_platforms: List[str]
     language: str = "es"
 
-def detect_platforms(question: str, current_platforms: List[str]) -> List[str]:
+async def detect_platforms(question: str, current_platforms: List[str]) -> List[str]:
     """Use Gemini Flash Lite to infer which platforms a question is about.
 
     Sends a one-shot classification prompt and parses the comma-separated
@@ -163,8 +172,8 @@ def detect_platforms(question: str, current_platforms: List[str]) -> List[str]:
         valid_platforms=", ".join(sorted(VALID_PLATFORMS)),
     )
 
-    model_lite = genai.GenerativeModel("models/gemini-3.1-flash-lite-preview")
-    response = model_lite.generate_content(classifier_prompt)
+    model_lite = genai.GenerativeModel("models/gemini-3.1-flash-lite")
+    response = await model_lite.generate_content_async(classifier_prompt)
 
     result = response.text.strip()
     detections = [p.strip() for p in result.split(",")]
@@ -183,8 +192,8 @@ async def detect_context(request: DetectRequest):
     request.current_platforms = [
         p for p in request.current_platforms if p in VALID_PLATFORMS
     ]
-    auto_detected = detect_platforms(request.message, request.current_platforms)
-    
+    auto_detected = await detect_platforms(request.message, request.current_platforms)
+
     context_message = None
     final_platforms = request.current_platforms
 
@@ -379,7 +388,7 @@ async def ask_ninja(request: ChatRequest):
                     }
                 )
 
-        model_name = "models/gemini-3.1-flash-lite-preview"
+        model_name = "models/gemini-3.1-flash-lite"
         gemini_hub = genai.GenerativeModel(model_name)
         chat = gemini_hub.start_chat(history=history)
 
@@ -394,7 +403,7 @@ async def ask_ninja(request: ChatRequest):
             mode_instructions=mode_instruction,
         )
 
-        full_query = f"{formatted_prompt}\n\nUSER QUESTION: {last_user_message}"
+        full_query = f"{formatted_prompt}\n\n---\nUSER QUESTION: {last_user_message}"
 
         t_llm = time.perf_counter()
         response = await chat.send_message_async(full_query, stream=True)
@@ -423,11 +432,10 @@ async def ask_ninja(request: ChatRequest):
         return StreamingResponse(stream_generator(), media_type="text/plain")
 
     except Exception as e:
-        error_message = str(e)
-        logger.error("ask error: %s", error_message)
+        logger.error("ask error: %s", str(e))
 
         async def error_gen():
-            yield f"Ninja out of service: {error_message}"
+            yield "Ninja out of service. Please try again later."
 
         return StreamingResponse(error_gen(), media_type="text/plain")
 

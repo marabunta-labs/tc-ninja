@@ -34,6 +34,8 @@ REGLA DE ORO (STRICT RAG):
 2. Si el usuario pregunta por una plataforma que NO está en el contexto o que no ha seleccionado, debes responder: "No tengo acceso a los documentos actualizados de esa red en este momento. Por favor, asegúrate de seleccionarla en el menú superior."
 3. NUNCA uses tu conocimiento externo para inventar o recordar términos que no estén escritos en el CONTEXTO LEGAL proporcionado abajo.
 
+{mode_instructions}
+
 CONTEXTO LEGAL (Única fuente de verdad):
 {context}
 
@@ -63,6 +65,8 @@ GOLDEN RULE (STRICT RAG):
 1. You may only answer using the information provided in the 'LEGAL CONTEXT' section.
 2. If the user asks about a platform that is NOT in the context or not selected, respond: "I don't have access to updated documents for that platform right now. Please make sure to select it in the menu above."
 3. NEVER use your external knowledge to invent or recall terms not written in the LEGAL CONTEXT below.
+
+{mode_instructions}
 
 LEGAL CONTEXT (Single source of truth):
 {context}

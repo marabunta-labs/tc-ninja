@@ -25,16 +25,11 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
-@keyframes marquee {
-  0% { transform: translateX(0%); }
-  100% { transform: translateX(-100%); }
+/* Cross-browser scrollbar hiding */
+.no-scrollbar {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;     /* Firefox */
 }
-
-.animate-marquee {
-  animation: marquee 30s linear infinite;
-}
-
-/* Pause both tracks when hovering the parent container */
-.group-marquee:hover .animate-marquee {
-  animation-play-state: paused;
+.no-scrollbar::-webkit-scrollbar {
+  display: none;             /* Chrome, Safari, Opera */
 }
