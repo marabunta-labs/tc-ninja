@@ -14,6 +14,7 @@ All platform and language configuration is loaded at startup from the shared
 import os
 import json
 import asyncio
+import math
 import time
 import re
 import logging
@@ -25,9 +26,9 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
-import httpx
 from supabase import ClientOptions, create_client
 from google import genai
+from google.genai import errors as genai_errors
 from google.genai import types as genai_types
 from dotenv import load_dotenv
 from typing import List
@@ -38,7 +39,7 @@ from prompts import SYSTEM_PROMPTS, DECISION_PROMPT, MODE_INSTRUCTIONS, OVERLOAD
 load_dotenv()
 
 # Validate required environment variables at startup
-_REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_KEY", "GEMINI_API_KEY", "HF_TOKEN"]
+_REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_KEY", "GEMINI_API_KEY"]
 _missing = [v for v in _REQUIRED_ENV if not os.getenv(v)]
 if _missing:
     raise RuntimeError(f"Missing required environment variables: {', '.join(_missing)}")
@@ -74,12 +75,7 @@ supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"), o
 gemini = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 GEMINI_MODEL = "gemini-3.1-flash-lite"
 
-HF_TOKEN = os.getenv("HF_TOKEN")
-EMBEDDING = _shared_config["embedding"]  # same model/prefixes the scraper indexes with
-HF_EMBED_URL = (
-    f"https://router.huggingface.co/hf-inference/models/{EMBEDDING['model']}"
-    "/pipeline/feature-extraction"
-)
+EMBEDDING = _shared_config["embedding"]  # same model and dimensions the scraper indexes with
 
 # RAG switches (measured with scripts/eval: hybrid + rerank is the best configuration)
 RAG_RERANK = os.getenv("RAG_RERANK", "1") != "0"
@@ -88,24 +84,23 @@ FINAL_CHUNKS = 8          # chunks per platform handed to the LLM
 RERANK_POOL = 20          # candidates the reranker chooses from
 
 
+def l2_normalize(vector: list) -> list:
+    """Gemini only returns unit-length vectors at full size; the truncated 384-d ones must be normalised by hand."""
+    norm = math.sqrt(sum(x * x for x in vector)) or 1.0
+    return [x / norm for x in vector]
+
+
 async def embed(text: str) -> list:
-    """Embed a *query* with the HuggingFace Inference Providers API (retries cold starts)."""
-    payload = {"inputs": EMBEDDING["queryPrefix"] + text}
-    async with httpx.AsyncClient() as client:
-        for attempt in range(3):
-            response = await client.post(
-                HF_EMBED_URL,
-                headers={"Authorization": f"Bearer {HF_TOKEN}"},
-                json=payload,
-                timeout=30.0,
-            )
-            if response.status_code in (429, 503) and attempt < 2:
-                await asyncio.sleep(1.5 * (attempt + 1))
-                continue
-            response.raise_for_status()
-            result = response.json()
-            # Feature-extraction returns [[...floats...]] or [...floats...] for a single string
-            return result[0] if isinstance(result[0], list) else result
+    """Embed a *query* with the Gemini API (same model, dimensions and normalisation as the scraper)."""
+    config = genai_types.EmbedContentConfig(task_type="RETRIEVAL_QUERY", output_dimensionality=EMBEDDING["dimensions"])
+    for attempt in range(3):
+        try:
+            response = await gemini.aio.models.embed_content(model=EMBEDDING["model"], contents=[text], config=config)
+            return l2_normalize(list(response.embeddings[0].values))
+        except genai_errors.APIError as e:
+            if e.code not in (429, 500, 503) or attempt == 2:
+                raise
+            await asyncio.sleep(1.5 * (attempt + 1))
 
 
 @app.middleware("http")
@@ -292,13 +287,14 @@ def _chunk_to_context(doc: dict, status: str) -> dict:
 _hybrid_unavailable_logged = False
 
 
-def search_chunks(query_vector: list, query_text: str, platform: str, language: str,
+def search_chunks(query_vector: list | None, query_text: str, platform: str, language: str,
                   count: int, version: str | None = None) -> list:
     """Top *count* chunks for one platform/language.
 
     Hybrid (vector + full-text, fused with RRF) when the database has
     ``match_documents_hybrid``; otherwise plain vector search. ``version=None``
     searches only the CURRENT version, a tag searches exactly that version.
+    ``query_vector=None`` (embedding service down) searches by full text only.
     """
     global _hybrid_unavailable_logged
     base = {
@@ -316,6 +312,8 @@ def search_chunks(query_vector: list, query_text: str, platform: str, language: 
         if not _hybrid_unavailable_logged:
             logger.warning("hybrid search unavailable (run migration 002?), using vector search: %s", e)
             _hybrid_unavailable_logged = True
+    if query_vector is None:
+        return []  # plain vector search cannot run without a vector
     params = dict(base, match_threshold=0.05)
     if version:
         params["filter_version"] = version
@@ -340,7 +338,7 @@ def list_versions(platform: str, language: str, limit: int = 2) -> list:
     return (comparable or rows)[:limit]
 
 
-def retrieve_context(platform: str, query_vector: list, query_text: str, language: str,
+def retrieve_context(platform: str, query_vector: list | None, query_text: str, language: str,
                      comparison: bool, pool: int = FINAL_CHUNKS) -> dict:
     """Blocking retrieval for one platform (run it in a worker thread).
 
@@ -371,7 +369,7 @@ def retrieve_context(platform: str, query_vector: list, query_text: str, languag
     return {"chunks": [], "changelog": None}
 
 
-async def gather_platform_context(platform: str, query_vector: list, query_text: str, language: str,
+async def gather_platform_context(platform: str, query_vector: list | None, query_text: str, language: str,
                                   comparison: bool) -> dict:
     """Retrieve (in a thread) and, for regular questions, rerank the candidates with Gemini."""
     use_rerank = RAG_RERANK and not comparison
@@ -448,8 +446,13 @@ async def ask_ninja(request: ChatRequest):
             comparison_mode = comparison_mode or is_comparison_query(search_query)
 
         t0 = time.perf_counter()
-        query_vector = await embed(search_query)
-        logger.info("embed %.0f ms", (time.perf_counter() - t0) * 1000)
+        try:
+            query_vector = await embed(search_query)
+            logger.info("embed %.0f ms", (time.perf_counter() - t0) * 1000)
+        except Exception as e:
+            # Embedding quota/outage must not take the chat down: the database falls back to full-text search.
+            logger.warning("embedding unavailable, using full-text search only: %s", e)
+            query_vector = None
 
         retrieved = await asyncio.gather(*(
             gather_platform_context(p, query_vector, search_query, request.language, comparison_mode)

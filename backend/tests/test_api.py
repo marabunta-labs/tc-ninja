@@ -1,3 +1,4 @@
+import asyncio
 import pytest
 from unittest.mock import patch, MagicMock, AsyncMock
 from fastapi.testclient import TestClient
@@ -96,6 +97,57 @@ class TestInputValidation:
         client.post("/ask", json={"platforms": ["Instagram"], "messages": messages})
         history = ask_mocks.gemini.aio.chats.create.call_args.kwargs["history"]
         assert history == []
+
+
+class TestEmbedding:
+    """Queries are embedded with Gemini; if that fails the chat keeps working with full-text search."""
+
+    @staticmethod
+    def _response(values):
+        return MagicMock(embeddings=[MagicMock(values=values)])
+
+    def test_query_vector_is_normalised_and_uses_the_query_task(self):
+        with patch("main.gemini") as g:
+            g.aio.models.embed_content = AsyncMock(return_value=self._response([3.0, 4.0] + [0.0] * 382))
+            vec = asyncio.run(main.embed("hello"))
+        assert abs(sum(x * x for x in vec) - 1.0) < 1e-9 and vec[:2] == [0.6, 0.8]
+        kwargs = g.aio.models.embed_content.call_args.kwargs
+        assert kwargs["model"] == main.EMBEDDING["model"] and kwargs["contents"] == ["hello"]
+        assert kwargs["config"].task_type == "RETRIEVAL_QUERY"
+        assert kwargs["config"].output_dimensionality == main.EMBEDDING["dimensions"] == 384
+
+    def test_rate_limit_is_retried(self):
+        limited = main.genai_errors.APIError(429, {"error": {"message": "quota"}})
+        with patch("main.gemini") as g, patch("main.asyncio.sleep", new=AsyncMock()):
+            g.aio.models.embed_content = AsyncMock(side_effect=[limited, self._response([1.0] + [0.0] * 383)])
+            vec = asyncio.run(main.embed("hello"))
+        assert vec[0] == 1.0 and g.aio.models.embed_content.await_count == 2
+
+    def test_other_errors_are_not_retried(self):
+        denied = main.genai_errors.APIError(403, {"error": {"message": "key"}})
+        with patch("main.gemini") as g:
+            g.aio.models.embed_content = AsyncMock(side_effect=denied)
+            with pytest.raises(main.genai_errors.APIError):
+                asyncio.run(main.embed("hello"))
+        assert g.aio.models.embed_content.await_count == 1
+
+    def test_chat_survives_embedding_outage_with_text_only_search(self, ask_mocks):
+        ask_mocks.embed.side_effect = RuntimeError("402 Payment Required")
+        r = client.post("/ask", json={
+            "platforms": ["Instagram"],
+            "messages": [{"role": "user", "content": "What data do you keep?"}],
+            "language": "en",
+        })
+        assert r.status_code == 200 and "Ninja out of service" not in r.text
+        name, params = ask_mocks.sb.rpc.call_args.args
+        assert name == "match_documents_hybrid" and params["query_embedding"] is None
+        assert params["query_text"] == "What data do you keep?"
+
+    def test_plain_vector_search_is_skipped_without_a_vector(self):
+        with patch("main.supabase") as sb:
+            sb.rpc.return_value.execute.side_effect = Exception("function match_documents_hybrid does not exist")
+            assert main.search_chunks(None, "keep data", "Instagram", "en", 5) == []
+        assert [c.args[0] for c in sb.rpc.call_args_list] == ["match_documents_hybrid"]
 
 
 class TestRetrieval:

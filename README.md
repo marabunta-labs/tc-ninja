@@ -34,7 +34,7 @@ T&C Ninja translates complex legal jargon from social media platforms into plain
 
 - **Frontend**: Next.js 16 + React 19 + Tailwind CSS 4
 - **Backend**: FastAPI with streaming responses
-- **Embeddings**: `multilingual-e5-small` (384-d, 512 tokens) via HuggingFace Inference API in the backend; configured once in `shared.json`
+- **Embeddings**: Gemini `gemini-embedding-001` truncated to 384 dimensions and L2-normalised (`RETRIEVAL_DOCUMENT` when indexing, `RETRIEVAL_QUERY` for questions), configured once in `shared.json`. If the embeddings service fails, the backend keeps answering with full-text search only (migration 003)
 - **LLM**: Google Gemini 3.1 Flash Lite
 - **Database**: Supabase with pgvector for semantic search
 - **Package Management**: uv (Python), npm (frontend)
@@ -178,8 +178,7 @@ Create `.env` files in `backend/` and `scripts/`:
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_KEY=your-anon-key
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
-GEMINI_API_KEY=your-gemini-api-key
-HF_TOKEN=your-huggingface-token
+GEMINI_API_KEY=your-gemini-api-key   # chat + embeddings (backend) and embeddings of the scraper
 ```
 
 ### Database Setup
@@ -277,7 +276,7 @@ cd frontend && npx vitest run
 | Frontend | Next.js 16, React 19, TypeScript 5, Tailwind CSS 4 |
 | Backend | FastAPI, Pydantic, uvicorn |
 | LLM | Google Gemini 3.1 Flash Lite |
-| Embeddings | SentenceTransformers (MiniLM-L12-v2) |
+| Embeddings | Gemini `gemini-embedding-001` (384-d) |
 | Database | Supabase + pgvector |
 | Scraping | Jina Reader API |
 | Testing | pytest + httpx (backend), vitest + testing-library (frontend) |

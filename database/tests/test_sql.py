@@ -61,6 +61,13 @@ cur.execute("select content from match_documents_hybrid(%s::vector, %s, 5, ARRAY
 r = cur.fetchall(); check("model mismatch: full-text half still finds legacy rows", any("30 days" in x[0] for x in r), r)
 cur.execute("select content, version_status from match_documents_hybrid(%s::vector, %s, 5, ARRAY['Telegram'], 'en', '2026-03-01')", [lit(vec("keep data")), "keep data"])
 r = cur.fetchall(); check("version filter reaches superseded", r and r[0][1] == "superseded", r)
+run(cur, ROOT + "migrations/003_hybrid_text_only_fallback.sql")
+cur.execute("select content from match_documents_hybrid(NULL::vector, %s, 5, ARRAY['Telegram'], 'en', NULL, 'gemini-embedding-001-384')", ["keep data days"])
+r = cur.fetchall(); check("003: NULL embedding falls back to full-text search", any("30 days" in x[0] for x in r), r)
+cur.execute("select count(*) from match_documents_hybrid(NULL::vector, %s, 5, ARRAY['Telegram'], 'en')", ["zzzqqqxxx"])
+check("003: NULL embedding with no word match returns nothing (no arbitrary rows)", cur.fetchone()[0] == 0)
+cur.execute("select count(*) from match_documents_hybrid(%s::vector, %s, 5, ARRAY['Telegram'], 'en')", [lit(vec("keep data")), "keep data"])
+check("003: a real vector still works", cur.fetchone()[0] > 0)
 for q in ["what's 'this': a & b | c!", "((", "", "!!! ???", "a:*b", "\"quoted\" -minus OR"]:
     try:
         cur.execute("select count(*) from match_documents_hybrid(%s::vector, %s, 5, ARRAY['Telegram'], 'en')", [lit(vec("x")), q]); ok = True

@@ -1,11 +1,9 @@
 {
   "languages": ["es", "en"],
   "embedding": {
-    "id": "multilingual-e5-small",
-    "model": "intfloat/multilingual-e5-small",
-    "dimensions": 384,
-    "queryPrefix": "query: ",
-    "passagePrefix": "passage: "
+    "id": "gemini-embedding-001-384",
+    "model": "gemini-embedding-001",
+    "dimensions": 384
   },
   "platforms": [
     {

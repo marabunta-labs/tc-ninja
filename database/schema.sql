@@ -215,7 +215,8 @@ BEGIN
   vec AS (
     SELECT s.id, row_number() OVER (ORDER BY s.embedding <=> query_embedding) AS rnk
       FROM scope s
-     WHERE filter_embedding_model IS NULL OR s.embedding_model = filter_embedding_model
+     WHERE query_embedding IS NOT NULL  -- sin vector (servicio de embeddings caído) solo cuenta el texto completo
+       AND (filter_embedding_model IS NULL OR s.embedding_model = filter_embedding_model)
      ORDER BY s.embedding <=> query_embedding
      LIMIT pool_size
   ),

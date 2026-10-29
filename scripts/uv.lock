@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 5
 requires-python = ">=3.11"
 resolution-markers = [
     "python_full_version >= '3.14'",
@@ -426,37 +426,37 @@ wheels = [
 
 [package.optional-dependencies]
 cublas = [
-    { name = "nvidia-cublas", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
+    { name = "nvidia-cublas" },
 ]
 cudart = [
-    { name = "nvidia-cuda-runtime", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
+    { name = "nvidia-cuda-runtime" },
 ]
 cufft = [
-    { name = "nvidia-cufft", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
+    { name = "nvidia-cufft" },
 ]
 cufile = [
-    { name = "nvidia-cufile", marker = "sys_platform == 'linux'" },
+    { name = "nvidia-cufile" },
 ]
 cupti = [
-    { name = "nvidia-cuda-cupti", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
+    { name = "nvidia-cuda-cupti" },
 ]
 curand = [
-    { name = "nvidia-curand", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
+    { name = "nvidia-curand" },
 ]
 cusolver = [
-    { name = "nvidia-cusolver", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
+    { name = "nvidia-cusolver" },
 ]
 cusparse = [
-    { name = "nvidia-cusparse", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
+    { name = "nvidia-cusparse" },
 ]
 nvjitlink = [
-    { name = "nvidia-nvjitlink", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
+    { name = "nvidia-nvjitlink" },
 ]
 nvrtc = [
-    { name = "nvidia-cuda-nvrtc", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
+    { name = "nvidia-cuda-nvrtc" },
 ]
 nvtx = [
-    { name = "nvidia-nvtx", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
+    { name = "nvidia-nvtx" },
 ]
 
 [[package]]
@@ -2646,13 +2646,10 @@ dependencies = [
     { name = "beautifulsoup4" },
     { name = "google-genai" },
     { name = "langchain-text-splitters" },
-    { name = "numpy" },
     { name = "playwright" },
     { name = "python-dotenv" },
     { name = "requests" },
-    { name = "sentence-transformers" },
     { name = "supabase" },
-    { name = "torch" },
     { name = "trafilatura" },
 ]
 
@@ -2660,24 +2657,31 @@ dependencies = [
 dev = [
     { name = "pytest" },
 ]
+eval = [
+    { name = "numpy" },
+    { name = "sentence-transformers" },
+    { name = "torch" },
+]
 
 [package.metadata]
 requires-dist = [
     { name = "beautifulsoup4" },
     { name = "google-genai", specifier = ">=2.25.0" },
     { name = "langchain-text-splitters" },
-    { name = "numpy", specifier = "<2.0.0" },
     { name = "playwright", specifier = ">=1.63.0" },
     { name = "python-dotenv" },
     { name = "requests" },
-    { name = "sentence-transformers" },
     { name = "supabase" },
-    { name = "torch", specifier = ">=2.0.0" },
     { name = "trafilatura", specifier = ">=2.2.0" },
 ]
 
 [package.metadata.requires-dev]
 dev = [{ name = "pytest" }]
+eval = [
+    { name = "numpy", specifier = "<2.0.0" },
+    { name = "sentence-transformers" },
+    { name = "torch", specifier = ">=2.0.0" },
+]
 
 [[package]]
 name = "tenacity"

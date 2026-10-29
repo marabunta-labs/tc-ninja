@@ -22,6 +22,8 @@ import json
 import argparse
 import datetime
 import functools
+import math
+import time
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -62,19 +64,45 @@ def get_supabase():
     return create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_SERVICE_ROLE_KEY"], options=ClientOptions(schema="tcninja"))
 
 
-@functools.lru_cache(maxsize=1)
-def get_model():
-    from sentence_transformers import SentenceTransformer
+EMBED_BATCH = 50      # texts per Gemini request
+EMBED_RETRIES = 8     # on rate limits (429) / transient errors, waiting 5 s, 10 s, 20 s... (max 65 s)
 
-    return SentenceTransformer(EMBEDDING["model"])
+
+@functools.lru_cache(maxsize=1)
+def get_gemini():
+    from google import genai
+
+    return genai.Client(api_key=os.environ["GEMINI_API_KEY"])
+
+
+def l2_normalize(vector: list[float]) -> list[float]:
+    """Gemini only returns unit-length vectors at full size; the truncated 384-d ones must be normalised by hand."""
+    norm = math.sqrt(sum(x * x for x in vector)) or 1.0
+    return [x / norm for x in vector]
 
 
 def embed_chunks(texts: list[str]) -> list[list[float]]:
-    """Embed passages exactly like the backend expects (prefix + L2 normalisation)."""
-    prefixed = [EMBEDDING["passagePrefix"] + t for t in texts]
-    return get_model().encode(
-        prefixed, batch_size=32, normalize_embeddings=True, show_progress_bar=False
-    ).tolist()
+    """Embed passages exactly like the backend embeds queries (same model, dimensions, L2 normalisation)."""
+    from google.genai import errors, types
+
+    config = types.EmbedContentConfig(task_type="RETRIEVAL_DOCUMENT", output_dimensionality=EMBEDDING["dimensions"])
+    vectors: list[list[float]] = []
+    for start in range(0, len(texts), EMBED_BATCH):
+        batch = texts[start:start + EMBED_BATCH]
+        for attempt in range(EMBED_RETRIES):
+            try:
+                response = get_gemini().models.embed_content(model=EMBEDDING["model"], contents=batch, config=config)
+                break
+            except errors.APIError as e:
+                if e.code not in (429, 500, 503) or attempt == EMBED_RETRIES - 1:
+                    raise
+                wait = min(65, 5 * 2 ** attempt)
+                print(f"   Gemini {e.code} while embedding, retrying in {wait}s...")
+                time.sleep(wait)
+        if len(response.embeddings) != len(batch):
+            raise RuntimeError(f"Gemini returned {len(response.embeddings)} embeddings for {len(batch)} texts")
+        vectors.extend(l2_normalize(list(e.values)) for e in response.embeddings)
+    return vectors
 
 
 def get_current_version(platform: str, lang: str) -> dict | None:

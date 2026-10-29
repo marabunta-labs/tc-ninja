@@ -35,12 +35,6 @@ jobs:
         with:
           enable-cache: true
 
-      - name: Cache embedding model
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/huggingface
-          key: hf-multilingual-e5-small
-
       - name: Install dependencies
         working-directory: scripts
         run: uv sync
