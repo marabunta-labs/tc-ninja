@@ -1,173 +1,257 @@
+"""T&C Ninja — scrape, embed and version the platforms' Terms & Conditions.
+
+For every (platform, language) in ``frontend/config/shared.json``:
+
+1. Download every source through its fetcher chain (Jina → direct → headless
+   browser), clean it and validate it is the real document in the right language
+   (not a login wall or error page).
+2. Compare the content hash with the **current** version. Unchanged → nothing to do.
+3. Changed → insert the new version as ``pending``, then promote it to
+   ``current`` atomically. The previous current version is **deprecated**
+   (``superseded``): searches no longer return it, only version comparisons do.
+   A sentence-level diff (plus an optional Gemini summary) is stored with the
+   new version, so "what changed?" has a precise answer.
+4. Purge superseded versions beyond ``MAX_VERSIONS_TO_KEEP``.
+
+A failed scrape never touches the stored data, and the process exits non-zero
+so the scheduled GitHub Action turns red instead of silently going stale.
+"""
 import os
+import sys
 import json
-import hashlib
-import requests
+import argparse
 import datetime
+import functools
 from pathlib import Path
-from sentence_transformers import SentenceTransformer
-from supabase import create_client
+
 from dotenv import load_dotenv
-from langchain_text_splitters import RecursiveCharacterTextSplitter
+
+from changes import build_changes
+from chunking import chunk_document
+from fetchers import chain_for, fetch_source_text
+from scraping import (
+    FetchError,
+    InvalidContent,
+    check_shrink,
+    content_hash,
+    next_version_tag,
+    real_url,
+)
 
 load_dotenv()
 
 _config_path = Path(__file__).parent.parent / "frontend" / "config" / "shared.json"
-PLATFORMS = json.loads(_config_path.read_text())["platforms"]
+_config = json.loads(_config_path.read_text())
+PLATFORMS = _config["platforms"]
+EMBEDDING = _config["embedding"]  # shared with the backend: model, prefixes, dimensions
 
-supabase_url = os.getenv("SUPABASE_URL")
-supabase_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
-supabase = create_client(supabase_url, supabase_key)
+# Versions kept per (platform, language): the current one plus the previous ones
+# (needed for "what changed?" comparisons). Older ones are deleted.
+MAX_VERSIONS_TO_KEEP = 3
 
-model = SentenceTransformer("paraphrase-multilingual-MiniLM-L12-v2")
-
-# How many past versions to keep per (platform, language). Older ones are deleted.
-MAX_VERSIONS_TO_KEEP = 2
-
-def get_chunks(text: str, size: int = 1000, overlap: int = 150) -> list[str]:
-    """Split *text* into overlapping chunks suitable for embedding."""
-    splitter = RecursiveCharacterTextSplitter(
-        chunk_size=size,
-        chunk_overlap=overlap,
-        separators=["\n\n", "\n", ".", " ", ""]
-    )
-    return splitter.split_text(text)
+INSERT_BATCH = 50
+PAGE_SIZE = 1000  # Supabase returns at most 1000 rows per request
 
 
-def purge_old_versions(platform_name: str, platform_lang: str) -> None:
-    """Delete rows older than MAX_VERSIONS_TO_KEEP for this (platform, language)."""
+@functools.lru_cache(maxsize=1)
+def get_supabase():
+    from supabase import create_client
+
+    from supabase import ClientOptions
+
+    return create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_SERVICE_ROLE_KEY"], options=ClientOptions(schema="tcninja"))
+
+
+@functools.lru_cache(maxsize=1)
+def get_model():
+    from sentence_transformers import SentenceTransformer
+
+    return SentenceTransformer(EMBEDDING["model"])
+
+
+def embed_chunks(texts: list[str]) -> list[list[float]]:
+    """Embed passages exactly like the backend expects (prefix + L2 normalisation)."""
+    prefixed = [EMBEDDING["passagePrefix"] + t for t in texts]
+    return get_model().encode(
+        prefixed, batch_size=32, normalize_embeddings=True, show_progress_bar=False
+    ).tolist()
+
+
+def get_current_version(platform: str, lang: str) -> dict | None:
+    """Return the ``current`` document_versions row for this pair, or None."""
     resp = (
-        supabase.table("documents")
-        .select("metadata->>version")
-        .eq("platform", platform_name)
-        .eq("language", platform_lang)
-        .execute()
-    )
-    versions = sorted(
-        {r.get("version") for r in (resp.data or []) if r.get("version")},
-        reverse=True,
-    )
-    # versions is ordered newest→oldest; skip the ones we want to keep
-    versions_to_delete = versions[MAX_VERSIONS_TO_KEEP:]
-    for ver in versions_to_delete:
-        supabase.table("documents") \
-            .delete() \
-            .eq("platform", platform_name) \
-            .eq("language", platform_lang) \
-            .eq("metadata->>version", ver) \
-            .execute()
-        print(f"🗑  Deleted old version {ver} for {platform_name} ({platform_lang.upper()})")
-
-
-def content_hash(text: str) -> str:
-    """Return the SHA-256 hex digest of *text*, used for change detection."""
-    return hashlib.sha256(text.encode()).hexdigest()
-
-
-def get_latest_version(platform_name: str, platform_lang: str) -> str | None:
-    """Return the most recent version tag stored for this (platform, language), or None."""
-    resp = (
-        supabase.table("documents")
-        .select("metadata->>version")
-        .eq("platform", platform_name)
-        .eq("language", platform_lang)
-        .order("id", desc=True)
+        get_supabase().table("document_versions")
+        .select("*")
+        .eq("platform", platform)
+        .eq("language", lang)
+        .eq("status", "current")
         .limit(1)
         .execute()
     )
-    if resp.data:
-        return resp.data[0].get("version")
-    return None
+    return resp.data[0] if resp.data else None
 
 
-def get_latest_hash(platform_name: str, platform_lang: str) -> str | None:
-    """Return the content_hash stored in the most recent version, or None."""
+def discard_pending(platform: str, lang: str) -> None:
+    """Remove leftovers of an interrupted run (chunks go with them via ON DELETE CASCADE)."""
+    get_supabase().table("document_versions").delete() \
+        .eq("platform", platform).eq("language", lang).eq("status", "pending").execute()
+
+
+def purge_old_versions(platform: str, lang: str) -> None:
+    """Delete superseded versions beyond MAX_VERSIONS_TO_KEEP (current included)."""
     resp = (
-        supabase.table("documents")
-        .select("metadata")
-        .eq("platform", platform_name)
-        .eq("language", platform_lang)
+        get_supabase().table("document_versions")
+        .select("id, version")
+        .eq("platform", platform)
+        .eq("language", lang)
+        .eq("status", "superseded")
         .order("id", desc=True)
-        .limit(1)
         .execute()
     )
-    if resp.data:
-        return resp.data[0].get("metadata", {}).get("content_hash")
-    return None
+    for old in (resp.data or [])[MAX_VERSIONS_TO_KEEP - 1:]:
+        get_supabase().table("document_versions").delete().eq("id", old["id"]).execute()
+        print(f"🗑  Purged old version {old['version']} of {platform} ({lang.upper()})")
 
 
-def process_platform_lang(name: str, urls: list[str], lang: str) -> None:
-    """Fetch, embed, and store all T&C documents for one platform/language pair.
+def taken_version_tags(platform: str, lang: str, prefix: str) -> set[str]:
+    resp = (
+        get_supabase().table("document_versions")
+        .select("version")
+        .eq("platform", platform)
+        .eq("language", lang)
+        .like("version", f"{prefix}%")
+        .execute()
+    )
+    return {r["version"] for r in (resp.data or [])}
 
-    Two-level skip logic to avoid redundant work:
 
-    1. **Version-date fast-path** (no network): if today's version is already
-       stored in the DB, return immediately without fetching any URL.
-    2. **Content-hash check** (after fetch): if the fetched content is byte-for-byte
-       identical to the last stored version (combined hash across all sources),
-       skip the insert even when running on a new calendar day.
+def download_sources(platform: dict, lang: str) -> tuple[list[tuple[str, str]], list[str], list[str]]:
+    """Fetch, clean and validate every source through its fetcher chain.
 
-    Otherwise splits each document into chunks, embeds them, bulk-inserts into
-    Supabase (preserving per-chunk ``source_url``), and purges old versions.
+    Returns ``(sources, language_mismatches, fetchers_used)``. Raises FetchError or
+    InvalidContent when any source cannot be obtained: a partial document would
+    silently drop a whole policy from the new version.
     """
-    current_version = datetime.date.today().strftime("%Y-%m-%d")
+    sources, mismatched, used = [], [], []
+    for url in platform["scrapeUrls"][lang]:
+        source = real_url(url)
+        fetched = fetch_source_text(url, lang, chain_for(platform, url))
+        if not fetched.language_ok:
+            mismatched.append(source)
+            print(f"⚠️  {source} is in '{fetched.detected_language}', not '{lang}' (no localized page found).")
+        sources.append((source, fetched.text))
+        used.append(f"{source} via {fetched.fetcher}")
+    return sources, mismatched, used
 
-    # Fast-path: today's version is already stored — no network requests needed
-    if get_latest_version(name, lang) == current_version:
-        print(f"⏭  {name} ({lang.upper()}) already at version {current_version}, skipping.")
-        return
 
-    print(f"🥷 Ninja analyzing: {name} ({lang.upper()}) — {len(urls)} source(s)...")
+def process_platform_lang(platform: dict, lang: str, force: bool = False) -> str:
+    """Bring one platform/language up to date. Returns ``updated``, ``unchanged`` or ``failed``."""
+    name = platform["id"]
+    label = f"{name} ({lang.upper()})"
+    print(f"🥷 Ninja analyzing: {label} — {len(platform['scrapeUrls'][lang])} source(s)...")
 
-    fetched: list[tuple[str, str]] = []
-    for url in urls:
-        response = requests.get(url)
-        if response.status_code != 200:
-            print(f"❌ Error accessing {url} ({name} {lang.upper()})")
-            return
-        fetched.append((url, response.text))
+    try:
+        sources, mismatched, used = download_sources(platform, lang)
+    except (FetchError, InvalidContent) as e:
+        print(f"❌ {label}: {e}. Stored data left untouched.")
+        return "failed"
 
-    # Secondary check: skip if content hasn't changed since the last stored version
-    combined_text = "\n\n".join(text for _, text in fetched)
-    new_hash = content_hash(combined_text)
+    combined = "\n\n".join(text for _, text in sources)
+    new_hash = content_hash(combined)
+    source_hashes = {url: content_hash(text) for url, text in sources}
 
-    if get_latest_hash(name, lang) == new_hash:
-        print(f"⏭  {name} ({lang.upper()}) content unchanged, skipping.")
-        return
+    current = get_current_version(name, lang)
+    if current and current["content_hash"] == new_hash and not force:
+        print(f"⏭  {label} unchanged (version {current['version']}).")
+        return "unchanged"
 
-    rows = []
-    chunk_index = 0
-    for url, text in fetched:
-        for chunk in get_chunks(text):
-            embedding = model.encode(chunk).tolist()
-            rows.append({
+    if current and not force:
+        try:
+            check_shrink((current.get("stats") or {}).get("chars"), len(combined))
+        except InvalidContent as e:
+            print(f"❌ {label}: {e}. Stored data left untouched.")
+            return "failed"
+        changed = [u for u, h in source_hashes.items() if (current.get("source_hashes") or {}).get(u) != h]
+        print(f"🔄 {label} changed since {current['version']}: {', '.join(changed) or 'source list'}")
+
+    chunks = []  # (source_url, Chunk)
+    for url, text in sources:
+        chunks.extend((url, c) for c in chunk_document(text))
+
+    print(f"   embedding {len(chunks)} chunks...")
+    embeddings = embed_chunks([c.embed_text for _, c in chunks])
+
+    changes = None
+    if current:
+        changes = build_changes(current.get("full_text"), combined, current["version"], name, lang)
+        if changes.get("summary"):
+            print(f"   changes vs {current['version']}: +{changes['added']} / -{changes['removed']} sentences")
+
+    today = datetime.date.today().strftime("%Y-%m-%d")
+    version = next_version_tag(today, taken_version_tags(name, lang, today))
+    sb = get_supabase()
+
+    discard_pending(name, lang)
+    version_id = None
+    try:
+        version_id = sb.table("document_versions").insert({
+            "platform": name,
+            "language": lang,
+            "version": version,
+            "status": "pending",
+            "content_hash": new_hash,
+            "source_hashes": source_hashes,
+            "embedding_model": EMBEDDING["id"],
+            "full_text": combined,
+            "changes": changes,
+            "stats": {
+                "chunks": len(chunks),
+                "chars": len(combined),
+                "sources": len(sources),
+                "fetchers": used,
+                "language_mismatch": mismatched,
+            },
+        }).execute().data[0]["id"]
+
+        rows = [
+            {
                 "platform": name,
                 "language": lang,
-                "content": chunk,
-                "embedding": embedding,
+                "content": chunk.content,
+                "embedding": emb,
+                "version_id": version_id,
                 "metadata": {
-                    "chunk_index": chunk_index,
+                    "chunk_index": i,
+                    "section": chunk.section,
                     "source_url": url,
-                    "fetch_date": current_version,
-                    "version": current_version,
+                    "fetch_date": today,
+                    "version": version,
                     "content_hash": new_hash,
                 },
-            })
-            chunk_index += 1
+            }
+            for i, ((url, chunk), emb) in enumerate(zip(chunks, embeddings))
+        ]
+        for start in range(0, len(rows), INSERT_BATCH):
+            sb.table("documents").insert(rows[start:start + INSERT_BATCH]).execute()
 
-    # Bulk insert in batches to avoid request size limits
-    BATCH = 50
-    for start in range(0, len(rows), BATCH):
-        supabase.table("documents").insert(rows[start:start + BATCH]).execute()
+        # Atomic swap: the new version becomes current, the old one is deprecated.
+        sb.rpc("activate_document_version", {"p_version_id": version_id}).execute()
+    except Exception as e:
+        print(f"❌ {label}: storing version {version} failed ({e}). Rolling back.")
+        if version_id is not None:
+            try:
+                sb.table("document_versions").delete().eq("id", version_id).execute()
+            except Exception as cleanup_error:
+                print(f"⚠️  rollback failed, pending version {version_id} will be cleaned next run: {cleanup_error}")
+        return "failed"
 
-    print(f"✅ {name} ({lang.upper()}) updated ({len(rows)} chunks from {len(urls)} source(s), version {current_version}).")
-
-    # Clean up old versions so the DB doesn't grow unbounded
+    deprecated = f", deprecated {current['version']}" if current else ""
+    print(f"✅ {label} → version {version} ({len(chunks)} chunks{deprecated}).")
     purge_old_versions(name, lang)
+    return "updated"
 
 
-if __name__ == "__main__":
-    import argparse
-
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Scrape and embed T&C documents into Supabase.")
     parser.add_argument(
         "--platform",
@@ -175,7 +259,12 @@ if __name__ == "__main__":
         metavar="ID",
         help="Platform ID to update (e.g. Instagram). Omit to update all platforms.",
     )
-    args = parser.parse_args()
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Store a new version even if the content hash is unchanged or the text shrank a lot.",
+    )
+    args = parser.parse_args(argv)
 
     platforms_to_run = PLATFORMS
     if args.platform:
@@ -183,9 +272,23 @@ if __name__ == "__main__":
         if not platforms_to_run:
             valid = [p["id"] for p in PLATFORMS]
             print(f"❌ Unknown platform: '{args.platform}'. Valid options: {valid}")
-            raise SystemExit(1)
+            return 1
 
+    results: dict[str, list[str]] = {"updated": [], "unchanged": [], "failed": []}
     for platform in platforms_to_run:
-        name = platform["id"]
-        for lang, urls in platform["scrapeUrls"].items():
-            process_platform_lang(name, urls, lang)
+        for lang in platform["scrapeUrls"]:
+            outcome = process_platform_lang(platform, lang, force=args.force)
+            results[outcome].append(f"{platform['id']}/{lang}")
+
+    print(
+        f"\nSummary: {len(results['updated'])} updated, "
+        f"{len(results['unchanged'])} unchanged, {len(results['failed'])} failed."
+    )
+    if results["failed"]:
+        print("Failed: " + ", ".join(results["failed"]))
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

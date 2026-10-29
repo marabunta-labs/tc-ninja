@@ -1,5 +1,12 @@
 {
   "languages": ["es", "en"],
+  "embedding": {
+    "id": "multilingual-e5-small",
+    "model": "intfloat/multilingual-e5-small",
+    "dimensions": 384,
+    "queryPrefix": "query: ",
+    "passagePrefix": "passage: "
+  },
   "platforms": [
     {
       "id": "Instagram",
@@ -13,6 +20,10 @@
           "https://r.jina.ai/https://help.instagram.com/581066165581870?locale=en_US",
           "https://r.jina.ai/https://privacycenter.instagram.com/policy?locale=en_US"
         ]
+      },
+      "sourceFetchers": {
+        "https://privacycenter.instagram.com/policy?locale=es_ES": ["playwright", "jina"],
+        "https://privacycenter.instagram.com/policy?locale=en_US": ["playwright", "jina"]
       },
       "icon": {
         "viewBox": "0 0 24 24",
@@ -84,13 +95,19 @@
       "color": "#1DA1F2",
       "scrapeUrls": {
         "es": [
-          "https://r.jina.ai/https://x.com/es/tos",
-          "https://r.jina.ai/https://x.com/es/privacy"
+          "https://r.jina.ai/https://twitter.com/es/tos",
+          "https://r.jina.ai/https://twitter.com/es/privacy"
         ],
         "en": [
-          "https://r.jina.ai/https://x.com/en/tos",
-          "https://r.jina.ai/https://x.com/en/privacy"
+          "https://r.jina.ai/https://twitter.com/en/tos",
+          "https://r.jina.ai/https://twitter.com/en/privacy"
         ]
+      },
+      "sourceFetchers": {
+        "https://twitter.com/es/tos": ["direct", "playwright", "jina"],
+        "https://twitter.com/es/privacy": ["direct", "playwright", "jina"],
+        "https://twitter.com/en/tos": ["direct", "playwright", "jina"],
+        "https://twitter.com/en/privacy": ["direct", "playwright", "jina"]
       },
       "icon": {
         "viewBox": "0 0 24 24",
@@ -127,6 +144,10 @@
           "https://r.jina.ai/https://www.facebook.com/privacy/policy/?locale=en_US"
         ]
       },
+      "sourceFetchers": {
+        "https://www.facebook.com/privacy/policy/?locale=es_ES": ["playwright", "jina"],
+        "https://www.facebook.com/privacy/policy/?locale=en_US": ["playwright", "jina"]
+      },
       "icon": {
         "viewBox": "0 0 24 24",
         "fill": "currentColor",
@@ -162,6 +183,10 @@
           "https://r.jina.ai/https://policies.google.com/privacy?hl=en"
         ]
       },
+      "sourceFetchers": {
+        "https://www.youtube.com/t/terms?hl=es": ["direct", "playwright", "jina"],
+        "https://www.youtube.com/t/terms?hl=en": ["direct", "playwright", "jina"]
+      },
       "icon": {
         "viewBox": "0 0 24 24",
         "fill": "currentColor",
@@ -189,8 +214,8 @@
       "color": "#0A66C2",
       "scrapeUrls": {
         "es": [
-          "https://r.jina.ai/https://www.linkedin.com/legal/user-agreement?lang=es",
-          "https://r.jina.ai/https://www.linkedin.com/legal/privacy-policy?lang=es"
+          "https://r.jina.ai/https://es.linkedin.com/legal/user-agreement",
+          "https://r.jina.ai/https://es.linkedin.com/legal/privacy-policy"
         ],
         "en": [
           "https://r.jina.ai/https://www.linkedin.com/legal/user-agreement?lang=en",

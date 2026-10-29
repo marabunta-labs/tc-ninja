@@ -8,11 +8,16 @@ dependencies = [
     "uvicorn>=0.30.0,<0.40.0",
     "supabase",
     "httpx",
-    "google-generativeai",
     "python-dotenv",
     "pydantic",
-    "pytest",
+    "google-genai>=2.25.0",
 ]
+
+[dependency-groups]
+dev = ["pytest", "pytest-asyncio"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
 
 [project.scripts]
 serve = "uvicorn main:app --host 0.0.0.0 --port 8000 --reload"

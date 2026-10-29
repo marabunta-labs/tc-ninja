@@ -53,6 +53,13 @@ REGLA DE COMPARACIÓN:
 - Resalta quién es "más agresivo" con los datos y quién protege mejor la privacidad.
 - No mezcles las cláusulas; deja claro qué pertenece a cada plataforma.
 
+REGLA DE VERSIONES (TyC VIGENTES vs DEPRECADAS):
+- Cada fragmento indica "Status: CURRENT" (vigente hoy) o "Status: SUPERSEDED" (deprecado, ya NO está en vigor).
+- Lo que el usuario acepta hoy es SOLO lo que figura como CURRENT.
+- Usa fragmentos SUPERSEDED únicamente para explicar qué ha cambiado, y deja siempre claro que esa versión ya no es válida.
+- Si el usuario pide comparar y solo existe una versión, dilo claramente; no inventes cambios.
+- Si aparece un "AUTOMATIC CHANGELOG", es un resumen automático de las diferencias reales entre versiones: úsalo para explicar qué cambió y apóyate en los fragmentos para citar. Si un cambio del resumen no aparece en los fragmentos, menciónalo con cautela.
+
 ESTRUCTURA DE RESPUESTA:
 - Una frase de impacto al inicio.
 - Explicación dividida en secciones claras con títulos en negrita si es necesario.
@@ -84,6 +91,13 @@ COMPARISON RULE:
 - If the user asks about multiple platforms or makes comparisons, organize the response using a table (Markdown format) or clear comparison points.
 - Highlight who is "more aggressive" with data and who better protects privacy.
 - Don't mix clauses; make it clear what belongs to each platform.
+
+VERSION RULE (CURRENT vs DEPRECATED T&C):
+- Each fragment shows "Status: CURRENT" (in force today) or "Status: SUPERSEDED" (deprecated, NO LONGER in force).
+- What the user agrees to today is ONLY what is marked CURRENT.
+- Use SUPERSEDED fragments only to explain what changed, and always make clear that version is no longer valid.
+- If the user asks for a comparison and only one version exists, say so clearly; never invent changes.
+- An "AUTOMATIC CHANGELOG", when present, is an automatic summary of the real differences between versions: use it to explain what changed and rely on the fragments to quote. If a change in the summary is not in the fragments, mention it cautiously.
 
 RESPONSE STRUCTURE:
 - An impact statement at the beginning.

@@ -1,11 +1,12 @@
 """T&C Ninja — FastAPI backend.
 
-Exposes two endpoints:
+Exposes these endpoints:
 
 * ``POST /detect-context``  — lightweight Gemini classifier that infers which
   social-media platforms a user question is about.
 * ``POST /ask``             — full RAG pipeline: embed → Supabase vector search
-  → Gemini streaming response.
+  (current T&C only; deprecated versions just for comparisons) → Gemini streaming response.
+* ``GET  /versions``        — current T&C version / last-update date per platform.
 
 All platform and language configuration is loaded at startup from the shared
 ``frontend/config/shared.json`` file so there is a single source of truth.
@@ -14,6 +15,7 @@ import os
 import json
 import asyncio
 import time
+import re
 import logging
 import urllib.parse
 import uuid
@@ -22,13 +24,15 @@ from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 import httpx
-from supabase import create_client
-import google.generativeai as genai
+from supabase import ClientOptions, create_client
+from google import genai
+from google.genai import types as genai_types
 from dotenv import load_dotenv
 from typing import List
 
+import rag
 from prompts import SYSTEM_PROMPTS, DECISION_PROMPT, MODE_INSTRUCTIONS, OVERLOAD_MSG, CONTEXT_MESSAGES
 
 load_dotenv()
@@ -65,31 +69,43 @@ app.add_middleware(
     allow_headers=["Content-Type", "X-Request-Id"],
 )
 
-supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+# Las apps de Marabunta Labs comparten proyecto de Supabase; tc-ninja vive en su esquema.
+supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"), options=ClientOptions(schema="tcninja"))
+gemini = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+GEMINI_MODEL = "gemini-3.1-flash-lite"
 
 HF_TOKEN = os.getenv("HF_TOKEN")
+EMBEDDING = _shared_config["embedding"]  # same model/prefixes the scraper indexes with
 HF_EMBED_URL = (
-    "https://router.huggingface.co/hf-inference/models/"
-    "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+    f"https://router.huggingface.co/hf-inference/models/{EMBEDDING['model']}"
     "/pipeline/feature-extraction"
 )
 
+# RAG switches (measured with scripts/eval: hybrid + rerank is the best configuration)
+RAG_RERANK = os.getenv("RAG_RERANK", "1") != "0"
+RAG_REWRITE = os.getenv("RAG_REWRITE", "1") != "0"
+FINAL_CHUNKS = 8          # chunks per platform handed to the LLM
+RERANK_POOL = 20          # candidates the reranker chooses from
+
+
 async def embed(text: str) -> list:
-    """Embed *text* using the HuggingFace Inference Providers API."""
+    """Embed a *query* with the HuggingFace Inference Providers API (retries cold starts)."""
+    payload = {"inputs": EMBEDDING["queryPrefix"] + text}
     async with httpx.AsyncClient() as client:
-        response = await client.post(
-            HF_EMBED_URL,
-            headers={"Authorization": f"Bearer {HF_TOKEN}"},
-            json={"inputs": text},
-            timeout=30.0,
-        )
-        response.raise_for_status()
-        result = response.json()
-        # Feature-extraction returns [[...floats...]] for a single string
-        if isinstance(result[0], list):
-            return result[0]
-        return result
+        for attempt in range(3):
+            response = await client.post(
+                HF_EMBED_URL,
+                headers={"Authorization": f"Bearer {HF_TOKEN}"},
+                json=payload,
+                timeout=30.0,
+            )
+            if response.status_code in (429, 503) and attempt < 2:
+                await asyncio.sleep(1.5 * (attempt + 1))
+                continue
+            response.raise_for_status()
+            result = response.json()
+            # Feature-extraction returns [[...floats...]] or [...floats...] for a single string
+            return result[0] if isinstance(result[0], list) else result
 
 
 @app.middleware("http")
@@ -131,18 +147,22 @@ async def log_requests(request: Request, call_next):
     return response
 
 
+MAX_MESSAGE_CHARS = 4_000
+MAX_HISTORY_MESSAGES = 20  # turns sent back to Gemini; older ones are dropped to bound cost
+
+
 class Message(BaseModel):
     """A single turn in the conversation (role is ``'user'``, ``'model'``, or ``'system'``)."""
 
     role: str
-    content: str
+    content: str = Field(max_length=MAX_MESSAGE_CHARS)
 
 
 class ChatRequest(BaseModel):
     """Request body for ``POST /ask``."""
 
     platforms: List[str]
-    messages: List[Message]
+    messages: List[Message] = Field(min_length=1)
     mode: str = "explanation"
     language: str = "es"
 
@@ -155,7 +175,7 @@ VALID_LANGUAGES = set(_shared_config["languages"])
 class DetectRequest(BaseModel):
     """Request body for ``POST /detect-context``."""
 
-    message: str
+    message: str = Field(max_length=MAX_MESSAGE_CHARS)
     current_platforms: List[str]
     language: str = "es"
 
@@ -172,10 +192,16 @@ async def detect_platforms(question: str, current_platforms: List[str]) -> List[
         valid_platforms=", ".join(sorted(VALID_PLATFORMS)),
     )
 
-    model_lite = genai.GenerativeModel("models/gemini-3.1-flash-lite")
-    response = await model_lite.generate_content_async(classifier_prompt)
+    try:
+        response = await gemini.aio.models.generate_content(
+            model=GEMINI_MODEL, contents=classifier_prompt
+        )
+        result = response.text.strip()
+    except Exception as e:
+        # Classifier outage or safety block: keep the current context instead of failing the chat.
+        logger.warning("detect_platforms failed, keeping current context: %s", e)
+        return []
 
-    result = response.text.strip()
     detections = [p.strip() for p in result.split(",")]
     return [p for p in detections if p in VALID_PLATFORMS]
 
@@ -217,38 +243,163 @@ async def detect_context(request: DetectRequest):
     return {"platforms": final_platforms, "message": context_message}
 
 
-COMPARISON_KEYWORDS = [
-    "changed", "cambio", "cambiado", "diferencia", "antes", "previous",
-    "updated", "actualizado", "evolución", "evolution", "history",
-    "historial", "version", "versión", "compare", "comparar",
-]
+# Whole words / stems (not substrings: "antes" must not match "constantes").
+_COMPARISON_RE = re.compile(
+    r"(?<!\w)(?:changed|changes|before|previous|updated|evolution|history|versions?|compare"
+    r"|cambi\w*|diferencia\w*|antes|anterior(?:es)?|actualizad\w*|evoluci[oó]n|historial|versi[oó]n(?:es)?"
+    r"|comparar?)(?!\w)",
+    re.IGNORECASE,
+)
 
 
 def is_comparison_query(text: str) -> bool:
     """Return True if *text* contains a keyword that suggests a temporal comparison query."""
-    lower = text.lower()
-    return any(kw in lower for kw in COMPARISON_KEYWORDS)
+    return bool(_COMPARISON_RE.search(text))
 
 
-def fetch_versioned_context(
-    query_vector: list, platform: str, language: str, version: str, count: int = 4
-) -> list:
-    """Retrieve the top *count* document chunks for a specific platform version.
+_MARKDOWN_NOISE = re.compile(r"[*_#>`|\[\]()~]|^\s*[-+]\s+", re.MULTILINE)
 
-    Calls the ``match_documents`` Supabase RPC with the optional
-    ``filter_version`` parameter to restrict results to the given version tag.
-    Used exclusively for comparison (temporal) queries.
+
+def text_fragment_link(url: str, content: str, max_words: int = 12) -> str:
+    """Build a ``#:~:text=`` link that highlights *content* on the source page.
+
+    The chunk is markdown, the page is rendered text: markdown syntax is removed
+    or the fragment would never match. ``-`` must be percent-encoded too, or it
+    is read as the ``prefix-,text`` separator.
     """
-    rpc_params = {
+    if "#" in url:
+        return url
+    words = _MARKDOWN_NOISE.sub(" ", content).split()
+    snippet = " ".join(words[:max_words])
+    if not snippet:
+        return url
+    encoded = urllib.parse.quote(snippet, safe="").replace("-", "%2D")
+    return f"{url}#:~:text={encoded}"
+
+
+def _chunk_to_context(doc: dict, status: str) -> dict:
+    metadata = doc.get("metadata") or {}
+    return {
+        "content": doc["content"],
+        "url": metadata.get("source_url", "URL not available"),
+        "date": metadata.get("fetch_date", "Unknown date"),
+        "section": metadata.get("section", ""),
+        "version": doc.get("version") or metadata.get("version", "unknown"),
+        "status": doc.get("version_status") or status,
+    }
+
+
+_hybrid_unavailable_logged = False
+
+
+def search_chunks(query_vector: list, query_text: str, platform: str, language: str,
+                  count: int, version: str | None = None) -> list:
+    """Top *count* chunks for one platform/language.
+
+    Hybrid (vector + full-text, fused with RRF) when the database has
+    ``match_documents_hybrid``; otherwise plain vector search. ``version=None``
+    searches only the CURRENT version, a tag searches exactly that version.
+    """
+    global _hybrid_unavailable_logged
+    base = {
         "query_embedding": query_vector,
-        "match_threshold": 0.05,
         "match_count": count,
         "filter_platforms": [platform],
         "filter_language": language,
-        "filter_version": version,
     }
-    response = supabase.rpc("match_documents", rpc_params).execute()
-    return response.data or []
+    try:
+        params = dict(base, query_text=query_text, filter_embedding_model=EMBEDDING["id"])
+        if version:
+            params["filter_version"] = version
+        return supabase.rpc("match_documents_hybrid", params).execute().data or []
+    except Exception as e:
+        if not _hybrid_unavailable_logged:
+            logger.warning("hybrid search unavailable (run migration 002?), using vector search: %s", e)
+            _hybrid_unavailable_logged = True
+    params = dict(base, match_threshold=0.05)
+    if version:
+        params["filter_version"] = version
+    return supabase.rpc("match_documents", params).execute().data or []
+
+
+def list_versions(platform: str, language: str, limit: int = 2) -> list:
+    """Newest-first versions (current, then deprecated) that share the current embedding model."""
+    resp = (
+        supabase.table("document_versions")
+        .select("version, status, fetched_at, superseded_at, changes, embedding_model")
+        .eq("platform", platform)
+        .eq("language", language)
+        .in_("status", ["current", "superseded"])
+        .order("id", desc=True)
+        .limit(limit + 3)
+        .execute()
+    )
+    rows = resp.data or []
+    # Versions embedded with another model can't be compared by vector; they stay reachable by full-text only.
+    comparable = [r for r in rows if r.get("embedding_model") in (None, EMBEDDING["id"])]
+    return (comparable or rows)[:limit]
+
+
+def retrieve_context(platform: str, query_vector: list, query_text: str, language: str,
+                     comparison: bool, pool: int = FINAL_CHUNKS) -> dict:
+    """Blocking retrieval for one platform (run it in a worker thread).
+
+    Regular questions only get the **current** T&C (falling back to another language if
+    none exist), returning up to *pool* candidates. Comparison questions get the current
+    version plus the one it deprecated, each chunk tagged with its status, and the stored
+    changelog of the newest version.
+    """
+    if comparison:
+        chunks, changelog = [], None
+        for v in list_versions(platform, language):
+            docs = search_chunks(query_vector, query_text, platform, language, 4, version=v["version"])
+            chunks.extend(_chunk_to_context(d, v["status"]) for d in docs)
+            if changelog is None and (v.get("changes") or {}).get("summary"):
+                changelog = {"version": v["version"], "against": v["changes"].get("previous_version"),
+                             "summary": v["changes"]["summary"]}
+        return {"chunks": chunks, "changelog": changelog}
+
+    langs_to_try = [language] + [l for l in _shared_config["languages"] if l != language]
+    for lang in langs_to_try:
+        t_rag = time.perf_counter()
+        docs = search_chunks(query_vector, query_text, platform, lang, pool)
+        logger.info("rag %s/%s %.0f ms  %d docs", platform, lang, (time.perf_counter() - t_rag) * 1000, len(docs))
+        if docs:
+            if lang != language:
+                logger.warning("lang fallback: %s has no data for '%s', using '%s'", platform, language, lang)
+            return {"chunks": [_chunk_to_context(d, "current") for d in docs], "changelog": None}
+    return {"chunks": [], "changelog": None}
+
+
+async def gather_platform_context(platform: str, query_vector: list, query_text: str, language: str,
+                                  comparison: bool) -> dict:
+    """Retrieve (in a thread) and, for regular questions, rerank the candidates with Gemini."""
+    use_rerank = RAG_RERANK and not comparison
+    result = await asyncio.to_thread(
+        retrieve_context, platform, query_vector, query_text, language, comparison,
+        RERANK_POOL if use_rerank else FINAL_CHUNKS,
+    )
+    chunks = result["chunks"]
+    if use_rerank and len(chunks) > 1:
+        t_rr = time.perf_counter()
+        order = await rag.rerank(gemini, GEMINI_MODEL, query_text, [c["content"] for c in chunks], FINAL_CHUNKS)
+        logger.info("rerank %s %.0f ms", platform, (time.perf_counter() - t_rr) * 1000)
+        result["chunks"] = [chunks[i] for i in order]
+    else:
+        result["chunks"] = chunks[:FINAL_CHUNKS]
+    return result
+
+
+@app.get("/versions")
+async def versions():
+    """Current T&C version, last-update date and changelog per platform/language."""
+    resp = await asyncio.to_thread(
+        lambda: supabase.table("document_versions")
+        .select("platform, language, version, fetched_at, activated_at, changes")
+        .eq("status", "current")
+        .execute()
+    )
+    return {"versions": resp.data or []}
 
 
 @app.post("/ask")
@@ -257,14 +408,13 @@ async def ask_ninja(request: ChatRequest):
 
     Pipeline:
     1. Sanitise inputs (platforms, mode, language) against whitelists.
-    2. Embed the last user message with SentenceTransformer.
-    3. For each platform, retrieve the most relevant document chunks from
-       Supabase via ``match_documents`` (with language fallback). For comparison
-       queries the same RPC is called with an explicit ``filter_version``.
-    4. Format the retrieved chunks with clickable source URLs using
-       ``#:~:text=`` text fragments.
-    5. Send the assembled prompt to Gemini and stream the response
-       character-by-character back to the client.
+    2. Rewrite follow-up questions into standalone queries and embed them.
+    3. Retrieve, per platform and in parallel, the most relevant chunks of the
+       **current** T&C (hybrid vector + full-text search, reranked by Gemini).
+       Deprecated versions are only retrieved for comparison queries, labelled
+       as superseded and accompanied by the stored changelog.
+    4. Format the chunks with clickable ``#:~:text=`` source links.
+    5. Send the assembled prompt to Gemini and stream the response back.
     """
     request.platforms = [p for p in request.platforms if p in VALID_PLATFORMS]
     if not request.platforms:
@@ -278,97 +428,62 @@ async def ask_ninja(request: ChatRequest):
 
     last_user_message = request.messages[-1].content
 
-    t0 = time.perf_counter()
-    query_vector = await embed(last_user_message)
-    logger.info("embed %.0f ms", (time.perf_counter() - t0) * 1000)
-
     final_platforms = request.platforms
-    context_sections = {}
     comparison_mode = is_comparison_query(last_user_message)
 
-    for p in final_platforms:
-        if comparison_mode:
-            versions_resp = supabase.table("documents") \
-                .select("metadata->version") \
-                .eq("platform", p) \
-                .eq("language", request.language) \
-                .execute()
+    history_pairs = [
+        ("user" if m.role == "user" else "model", m.content)
+        for m in request.messages[:-1][-MAX_HISTORY_MESSAGES:]
+        if m.role != "system"
+    ]
 
-            distinct_versions = sorted(
-                {r.get("version") for r in (versions_resp.data or []) if r.get("version")},
-                reverse=True,
-            )
+    try:
+        # A follow-up like "and how long do they keep it?" is meaningless to a search engine:
+        # turn it into a standalone query using the conversation.
+        search_query = last_user_message
+        if RAG_REWRITE and history_pairs:
+            t_rw = time.perf_counter()
+            search_query = await rag.rewrite_query(gemini, GEMINI_MODEL, history_pairs, last_user_message)
+            logger.info("rewrite %.0f ms: %r", (time.perf_counter() - t_rw) * 1000, search_query)
+            comparison_mode = comparison_mode or is_comparison_query(search_query)
 
-            context_sections[p] = []
-            for ver in distinct_versions[:2]:
-                docs = fetch_versioned_context(
-                    query_vector, p, request.language, ver, count=4
-                )
-                for doc in docs:
-                    metadata = doc.get("metadata", {})
-                    context_sections[p].append({
-                        "content": doc["content"],
-                        "url": metadata.get("source_url", "URL not available"),
-                        "date": metadata.get("fetch_date", "Unknown date"),
-                        "version": ver,
-                    })
-        else:
-            # Try requested language; fall back to the first available language
-            langs_to_try = [request.language] + [
-                lang for lang in _shared_config["languages"] if lang != request.language
-            ]
-            docs_found = []
-            used_lang = request.language
-            for lang in langs_to_try:
-                t_rag = time.perf_counter()
-                rpc_params = {
-                    "query_embedding": query_vector,
-                    "match_threshold": 0.05,
-                    "match_count": 8,
-                    "filter_platforms": [p],
-                    "filter_language": lang,
-                }
-                resp = supabase.rpc("match_documents", rpc_params).execute()
-                logger.info("rag %s/%s %.0f ms  %d docs", p, lang, (time.perf_counter() - t_rag) * 1000, len(resp.data or []))
-                if resp.data:
-                    docs_found = resp.data
-                    used_lang = lang
-                    break
+        t0 = time.perf_counter()
+        query_vector = await embed(search_query)
+        logger.info("embed %.0f ms", (time.perf_counter() - t0) * 1000)
 
-            if docs_found:
-                if used_lang != request.language:
-                    logger.warning("lang fallback: %s has no data for '%s', using '%s'", p, request.language, used_lang)
-                context_sections[p] = []
-                for doc in docs_found:
-                    metadata = doc.get("metadata", {})
-                    context_sections[p].append({
-                        "content": doc["content"],
-                        "url": metadata.get("source_url", "URL not available"),
-                        "date": metadata.get("fetch_date", "Unknown date"),
-                    })
+        retrieved = await asyncio.gather(*(
+            gather_platform_context(p, query_vector, search_query, request.language, comparison_mode)
+            for p in final_platforms
+        ))
+    except Exception as e:
+        logger.error("retrieval error: %s", e)
+        return StreamingResponse(iter(["Ninja out of service. Please try again later."]), media_type="text/plain")
+
+    context_sections = {p: r for p, r in zip(final_platforms, retrieved) if r["chunks"]}
 
     context_formatted = ""
-    for p, chunks in context_sections.items():
+    for p, section_data in context_sections.items():
+        chunks = section_data["chunks"]
         context_formatted += f"--- DATA FROM {p.upper()} ---\n"
+        if comparison_mode and len({c["version"] for c in chunks}) < 2:
+            context_formatted += "(Only one stored version exists: there is no earlier version to compare against.)\n"
+        changelog = section_data["changelog"]
+        if changelog:
+            context_formatted += (
+                f"[AUTOMATIC CHANGELOG — version {changelog['version']} vs {changelog['against']}]\n"
+                f"{changelog['summary']}\n\n"
+            )
         for chunk_data in chunks:
             real_url = chunk_data["url"].replace("https://r.jina.ai/", "")
-            # Use first 15 words of the chunk for a more precise text fragment.
-            # The URL already points to the correct language page (even after lang fallback)
-            # because source_url is stored per-language in the metadata.
-            words = chunk_data["content"].split()
-            search_snippet = " ".join(words[:15])
-            if search_snippet:
-                encoded_text = urllib.parse.quote(search_snippet)
-                exact_link = f"{real_url}#:~:text={encoded_text}"
+            exact_link = text_fragment_link(real_url, chunk_data["content"])
+            if chunk_data["status"] == "superseded":
+                status_tag = "SUPERSEDED — deprecated, no longer in force"
             else:
-                exact_link = real_url
-
-            version_tag = ""
-            if "version" in chunk_data:
-                version_tag = f" | Version: {chunk_data['version']}"
-
+                status_tag = "CURRENT"
+            section_tag = f" | Section: {chunk_data['section']}" if chunk_data["section"] else ""
             context_formatted += (
-                f"[Source: {exact_link} | Fetched: {chunk_data['date']}{version_tag}]\n"
+                f"[Source: {exact_link} | Fetched: {chunk_data['date']} | "
+                f"Version: {chunk_data['version']} | Status: {status_tag}{section_tag}]\n"
                 f"{chunk_data['content']}\n\n"
             )
 
@@ -379,18 +494,19 @@ async def ask_ninja(request: ChatRequest):
         platforms_str = " and ".join(final_platforms)
 
         history = []
-        for msg in request.messages[:-1]:
+        for msg in request.messages[:-1][-MAX_HISTORY_MESSAGES:]:
             if msg.role != "system":
                 history.append(
-                    {
-                        "role": "user" if msg.role == "user" else "model",
-                        "parts": [msg.content],
-                    }
+                    genai_types.Content(
+                        role="user" if msg.role == "user" else "model",
+                        parts=[genai_types.Part(text=msg.content)],
+                    )
                 )
+        # Gemini rejects a history that does not start with a user turn (the cap can cut mid-pair).
+        while history and history[0].role != "user":
+            history.pop(0)
 
-        model_name = "models/gemini-3.1-flash-lite"
-        gemini_hub = genai.GenerativeModel(model_name)
-        chat = gemini_hub.start_chat(history=history)
+        chat = gemini.aio.chats.create(model=GEMINI_MODEL, history=history)
 
         mode_instruction = MODE_INSTRUCTIONS.get(request.language, MODE_INSTRUCTIONS["es"]).get(
             request.mode, MODE_INSTRUCTIONS.get(request.language, MODE_INSTRUCTIONS["es"])["explanation"]
@@ -406,7 +522,15 @@ async def ask_ninja(request: ChatRequest):
         full_query = f"{formatted_prompt}\n\n---\nUSER QUESTION: {last_user_message}"
 
         t_llm = time.perf_counter()
-        response = await chat.send_message_async(full_query, stream=True)
+        for attempt in range(3):
+            try:
+                response = await chat.send_message_stream(full_query)
+                break
+            except Exception as e:
+                if attempt == 2:
+                    raise
+                logger.warning("gemini send failed (attempt %d), retrying: %s", attempt + 1, e)
+                await asyncio.sleep(1.5 * (attempt + 1))
 
         async def stream_generator():
             first_chunk = True
@@ -417,6 +541,7 @@ async def ask_ninja(request: ChatRequest):
                             llm_ms = (time.perf_counter() - t_llm) * 1000
                             logger.info("llm first-token %.0f ms", llm_ms)
                             first_chunk = False
+                        # Typing effect: emit char by char with a tiny pause
                         for char in chunk.text:
                             yield char
                             await asyncio.sleep(0.001)
@@ -427,7 +552,8 @@ async def ask_ninja(request: ChatRequest):
                     overload_msg = OVERLOAD_MSG.get(request.language, OVERLOAD_MSG["en"])
                     yield overload_msg
                 else:
-                    yield f"\n\n[Streaming error: {str(e)}]"
+                    logger.error("llm stream error: %s", e)
+                    yield "\n\n⚠️ *The response was interrupted. Please try again.*"
 
         return StreamingResponse(stream_generator(), media_type="text/plain")
 

@@ -12,7 +12,14 @@ dependencies = [
     "python-dotenv",
     "beautifulsoup4",
     "langchain-text-splitters",
+    "trafilatura>=2.2.0",
+    "playwright>=1.63.0",
+    "google-genai>=2.25.0",
 ]
 
-[project.scripts]
-update-terms = "update_terms:main"
+[dependency-groups]
+dev = ["pytest"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
