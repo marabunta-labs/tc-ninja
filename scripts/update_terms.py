@@ -64,6 +64,10 @@ def get_supabase():
     return create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_SERVICE_ROLE_KEY"], options=ClientOptions(schema="tcninja"))
 
 
+class QuotaExhausted(Exception):
+    """The embeddings DAILY quota is used up (free tier: 1000 texts/day). Stop; the next run resumes."""
+
+
 EMBED_BATCH = 50      # texts per Gemini request
 EMBED_RETRIES = 8     # on rate limits (429) / transient errors, waiting 5 s, 10 s, 20 s... (max 65 s)
 
@@ -94,6 +98,8 @@ def embed_chunks(texts: list[str]) -> list[list[float]]:
                 response = get_gemini().models.embed_content(model=EMBEDDING["model"], contents=batch, config=config)
                 break
             except errors.APIError as e:
+                if e.code == 429 and "PerDay" in str(e):  # waiting seconds will not help: it resets at midnight Pacific time
+                    raise QuotaExhausted(str(e)[:300]) from e
                 if e.code not in (429, 500, 503) or attempt == EMBED_RETRIES - 1:
                     raise
                 wait = min(65, 5 * 2 ** attempt)
@@ -189,11 +195,15 @@ def process_platform_lang(platform: dict, lang: str, force: bool = False) -> str
     source_hashes = {url: content_hash(text) for url, text in sources}
 
     current = get_current_version(name, lang)
-    if current and current["content_hash"] == new_hash and not force:
+    # A stored version embedded with another model (or an unknown one) is re-embedded even if the text is the same.
+    stale_model = bool(current) and current.get("embedding_model") != EMBEDDING["id"]
+    if current and current["content_hash"] == new_hash and not force and not stale_model:
         print(f"⏭  {label} unchanged (version {current['version']}).")
         return "unchanged"
 
-    if current and not force:
+    if current and stale_model and current["content_hash"] == new_hash and not force:
+        print(f"🧬 {label}: same text, re-embedding with {EMBEDDING['id']} (was {current.get('embedding_model')}).")
+    elif current and not force:
         try:
             check_shrink((current.get("stats") or {}).get("chars"), len(combined))
         except InvalidContent as e:
@@ -302,15 +312,22 @@ def main(argv: list[str] | None = None) -> int:
             print(f"❌ Unknown platform: '{args.platform}'. Valid options: {valid}")
             return 1
 
-    results: dict[str, list[str]] = {"updated": [], "unchanged": [], "failed": []}
-    for platform in platforms_to_run:
-        for lang in platform["scrapeUrls"]:
+    results: dict[str, list[str]] = {"updated": [], "unchanged": [], "failed": [], "deferred": []}
+    pairs = [(p, lang) for p in platforms_to_run for lang in p["scrapeUrls"]]
+    for i, (platform, lang) in enumerate(pairs):
+        try:
             outcome = process_platform_lang(platform, lang, force=args.force)
-            results[outcome].append(f"{platform['id']}/{lang}")
+        except QuotaExhausted as e:
+            # Not a failure: nothing was written for this pair, and the next run picks up where this one stopped.
+            print(f"⏸  Embeddings daily quota exhausted — the remaining pairs wait for the next run. ({e})")
+            results["deferred"] = [f"{p['id']}/{lg}" for p, lg in pairs[i:]]
+            break
+        results[outcome].append(f"{platform['id']}/{lang}")
 
     print(
         f"\nSummary: {len(results['updated'])} updated, "
-        f"{len(results['unchanged'])} unchanged, {len(results['failed'])} failed."
+        f"{len(results['unchanged'])} unchanged, {len(results['failed'])} failed, "
+        f"{len(results['deferred'])} deferred (quota)."
     )
     if results["failed"]:
         print("Failed: " + ", ".join(results["failed"]))

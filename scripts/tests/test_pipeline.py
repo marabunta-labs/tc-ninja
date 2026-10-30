@@ -77,7 +77,8 @@ def test_first_version_is_stored_and_activated(env):
 def test_unchanged_content_does_nothing(env):
     db, _ = env
     db.versions.append({"id": 1, "platform": "Telegram", "language": "en", "status": "current",
-                        "version": "2026-01-01", "content_hash": ut.content_hash(NEW_TEXT), "stats": {}})
+                        "version": "2026-01-01", "content_hash": ut.content_hash(NEW_TEXT), "stats": {},
+                        "embedding_model": ut.EMBEDDING["id"]})
     assert ut.process_platform_lang(PLATFORM, "en") == "unchanged"
     assert not db.chunks and not db.activated
 
@@ -117,3 +118,37 @@ def test_insert_failure_rolls_back_pending_version(env, monkeypatch):
     monkeypatch.setattr(Query, "execute", boom)
     assert ut.process_platform_lang(PLATFORM, "en") == "failed"
     assert ("document_versions", {"id": 1}) in db.deleted and not db.activated
+
+
+def test_same_text_but_other_embedding_model_is_re_embedded(env):
+    db, _ = env
+    db.versions.append({"id": 1, "platform": "Telegram", "language": "en", "status": "current",
+                        "version": "2026-01-01", "content_hash": ut.content_hash(NEW_TEXT), "full_text": NEW_TEXT,
+                        "stats": {}, "embedding_model": "multilingual-e5-small"})
+    assert ut.process_platform_lang(PLATFORM, "en") == "updated"
+    assert db.versions[1]["embedding_model"] == ut.EMBEDDING["id"] and db.chunks
+    assert db.activated[-1][1] == {"p_version_id": 2}
+
+
+def test_unknown_embedding_model_counts_as_stale(env):
+    db, _ = env
+    db.versions.append({"id": 1, "platform": "Telegram", "language": "en", "status": "current",
+                        "version": "2026-01-01", "content_hash": ut.content_hash(NEW_TEXT), "stats": {}})  # no embedding_model
+    assert ut.process_platform_lang(PLATFORM, "en") == "updated"
+
+
+def test_daily_quota_stops_the_run_cleanly_and_keeps_the_data(env, monkeypatch, capsys):
+    db, _ = env
+    db.versions.append({"id": 1, "platform": "Telegram", "language": "en", "status": "current",
+                        "version": "2026-01-01", "content_hash": "old", "full_text": OLD_TEXT, "stats": {},
+                        "embedding_model": ut.EMBEDDING["id"]})
+
+    def quota(texts):
+        raise ut.QuotaExhausted("EmbedContentRequestsPerDayPerUserPerProjectPerModel-FreeTier")
+
+    monkeypatch.setattr(ut, "embed_chunks", quota)
+    monkeypatch.setattr(ut, "PLATFORMS", [PLATFORM, {"id": "Other", "scrapeUrls": {"en": ["https://o.org"], "es": ["https://o.org/es"]}}])
+    assert ut.main([]) == 0  # deferred is not a failure: the run stays green and resumes next time
+    out = capsys.readouterr().out
+    assert "quota exhausted" in out and "3 deferred" in out
+    assert len(db.versions) == 1 and not db.chunks and not db.activated  # nothing written

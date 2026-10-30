@@ -64,3 +64,12 @@ def test_mismatched_response_size_is_an_error(fake_gemini):
     fake_gemini.models.embed_content.return_value = _response([[1.0]])
     with pytest.raises(RuntimeError):
         ut.embed_chunks(["a", "b"])
+
+
+def test_daily_quota_is_not_retried_but_reported(fake_gemini):
+    daily = errors.APIError(429, {"error": {"message": "limit", "details": [
+        {"violations": [{"quotaId": "EmbedContentRequestsPerDayPerUserPerProjectPerModel-FreeTier"}]}]}})
+    fake_gemini.models.embed_content.side_effect = daily
+    with pytest.raises(ut.QuotaExhausted):
+        ut.embed_chunks(["a"])
+    assert fake_gemini.models.embed_content.call_count == 1  # waiting seconds cannot fix a daily limit
