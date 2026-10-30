@@ -31,7 +31,8 @@ class Query:
             db.chunks.extend(self.payload); return type("R", (), {"data": self.payload})
         if self.op == "delete":
             db.deleted.append((self.table, dict(self.filters))); return type("R", (), {"data": []})
-        rows = [v for v in db.versions if all(v.get(k) == x for k, x in self.filters.items())]
+        source = db.chunks if self.table == "documents" else db.versions
+        rows = [v for v in source if all(v.get(k) == x for k, x in self.filters.items())]
         return type("R", (), {"data": rows})
 
 
@@ -152,3 +153,30 @@ def test_daily_quota_stops_the_run_cleanly_and_keeps_the_data(env, monkeypatch, 
     out = capsys.readouterr().out
     assert "quota exhausted" in out and "3 deferred" in out
     assert len(db.versions) == 1 and not db.chunks and not db.activated  # nothing written
+
+
+def test_small_edit_reuses_unchanged_chunk_embeddings(env, monkeypatch):
+    db, state = env
+    state["text"] = OLD_TEXT
+    assert ut.process_platform_lang(PLATFORM, "en") == "updated"
+    db.versions[0]["status"] = "current"  # the fake does not run activate_document_version
+    first = len(db.chunks)
+    embedded = []
+    monkeypatch.setattr(ut, "embed_chunks", lambda texts: embedded.extend(texts) or [[1.0] * 384 for _ in texts])
+    state["text"] = OLD_TEXT + "\n\n## Contact\n\nWrite to us at the usual address."
+    assert ut.process_platform_lang(PLATFORM, "en") == "updated"
+    assert len(embedded) == 1 and "Contact" in embedded[0]
+    assert len(db.chunks) > first
+
+
+def test_embeddings_of_another_model_are_not_reused(env, monkeypatch):
+    db, state = env
+    state["text"] = OLD_TEXT
+    ut.process_platform_lang(PLATFORM, "en")
+    db.versions[0].update(status="current", embedding_model="multilingual-e5-small")
+    embedded = []
+    monkeypatch.setattr(ut, "embed_chunks", lambda texts: embedded.extend(texts) or [[1.0] * 384 for _ in texts])
+    assert ut.load_reusable_embeddings(db.versions[0]) == {}
+    state["text"] = NEW_TEXT
+    ut.process_platform_lang(PLATFORM, "en")
+    assert embedded

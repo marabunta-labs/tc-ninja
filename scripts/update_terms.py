@@ -29,7 +29,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from changes import build_changes
-from chunking import chunk_document
+from chunking import Chunk, chunk_document
 from fetchers import chain_for, fetch_source_text
 from scraping import (
     FetchError,
@@ -125,6 +125,29 @@ def get_current_version(platform: str, lang: str) -> dict | None:
     return resp.data[0] if resp.data else None
 
 
+def load_reusable_embeddings(current: dict | None) -> dict[str, list[float]]:
+    """``embed_text -> vector`` of the current version's chunks, so a small edit re-embeds only what changed.
+
+    Empty when there is no current version or it was embedded with another model (vectors of different models
+    are not comparable).
+    """
+    if not current or current.get("embedding_model") != EMBEDDING["id"]:
+        return {}
+    rows = (
+        get_supabase().table("documents")
+        .select("content, metadata, embedding")
+        .eq("version_id", current["id"])
+        .limit(1000)
+        .execute()
+        .data
+    )
+    reusable = {}
+    for row in rows:
+        vector = json.loads(row["embedding"]) if isinstance(row["embedding"], str) else row["embedding"]
+        reusable[Chunk(row["content"], (row["metadata"] or {}).get("section", "")).embed_text] = vector
+    return reusable
+
+
 def discard_pending(platform: str, lang: str) -> None:
     """Remove leftovers of an interrupted run (chunks go with them via ON DELETE CASCADE)."""
     get_supabase().table("document_versions").delete() \
@@ -216,8 +239,12 @@ def process_platform_lang(platform: dict, lang: str, force: bool = False) -> str
     for url, text in sources:
         chunks.extend((url, c) for c in chunk_document(text))
 
-    print(f"   embedding {len(chunks)} chunks...")
-    embeddings = embed_chunks([c.embed_text for _, c in chunks])
+    texts = [c.embed_text for _, c in chunks]
+    reusable = load_reusable_embeddings(current)
+    missing = list(dict.fromkeys(t for t in texts if t not in reusable))
+    print(f"   embedding {len(missing)} of {len(chunks)} chunks ({len(set(texts)) - len(missing)} reused from {current['version'] if current else '-'})...")
+    fresh = dict(zip(missing, embed_chunks(missing))) if missing else {}
+    embeddings = [reusable[t] if t in reusable else fresh[t] for t in texts]
 
     changes = None
     if current:
