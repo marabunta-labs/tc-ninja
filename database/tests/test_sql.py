@@ -24,8 +24,9 @@ def connect(name):
     srv = pgserver.get_server(tempfile.mkdtemp(prefix=name), cleanup_mode="stop")
     conn = psycopg2.connect(srv.get_uri()); conn.autocommit = True
     cur = conn.cursor()
-    for r in ("anon", "authenticated"):
+    for r in ("anon", "authenticated", "service_role"):
         cur.execute(f"DO $$ BEGIN CREATE ROLE {r}; EXCEPTION WHEN duplicate_object THEN NULL; END $$;")
+    cur.execute("CREATE SCHEMA IF NOT EXISTS extensions")  # Supabase ya trae el esquema y los roles; aquí se emulan
     return srv, conn, cur
 
 def run(cur, path):
