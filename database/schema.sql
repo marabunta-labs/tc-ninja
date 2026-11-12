@@ -1,9 +1,24 @@
--- T&C Ninja — database schema (fresh install).
+-- T&C Ninja: esquema `tcninja` (ESTADO ACTUAL; en el Supabase compartido cada app vive en su esquema).
 --
--- This file is NON-destructive: it can be re-run safely. To upgrade a database
--- created with the previous schema (no document_versions table), run
--- database/migrations/001_document_versions.sql and then 002_hybrid_search_and_changes.sql.
+-- Este fichero ya incluye lo que aportan database/migrations/001-003 (document_versions, busqueda
+-- hibrida, campos de modelo y de cambios, match_documents_hybrid con query_embedding NULL). Las migraciones
+-- se conservan solo como historial / para actualizar una base antigua: en una base nueva NO hacen falta.
+-- Copia de referencia en el repo privado marabunta-db (sql/30_tcninja_schema.sql): cambiar ambos a la vez.
 --
+-- Es NO destructivo y se puede ejecutar varias veces.
+
+create extension if not exists vector with schema extensions;
+create schema if not exists tcninja;
+set search_path = tcninja, extensions, public;
+
+-- La API REST de Supabase (anon / authenticated / service_role) entra en el esquema; lo que ve cada rol
+-- dentro lo deciden los permisos de las tablas y las politicas RLS. El backend y el scraper usan service_role.
+grant usage on schema tcninja to anon, authenticated, service_role;
+alter default privileges in schema tcninja grant all on tables to anon, authenticated, service_role;
+alter default privileges in schema tcninja grant all on sequences to anon, authenticated, service_role;
+alter default privileges in schema tcninja grant all on functions to anon, authenticated, service_role;
+-- (para exponerlo por la API: Settings > API > Exposed schemas debe incluir tcninja)
+
 -- Versioning model
 -- ----------------
 -- Every scrape of a (platform, language) pair that changed the T&C creates one
@@ -13,8 +28,6 @@
 --   current     → the T&C in force today (exactly one per platform+language)
 --   superseded  → deprecated by a newer version; kept only for comparisons
 --                 until the scraper purges it
-
-CREATE EXTENSION IF NOT EXISTS vector;
 
 CREATE TABLE IF NOT EXISTS document_versions (
   id bigserial PRIMARY KEY,
@@ -147,10 +160,6 @@ ALTER TABLE document_versions
   ADD COLUMN IF NOT EXISTS embedding_model text,
   ADD COLUMN IF NOT EXISTS full_text text,
   ADD COLUMN IF NOT EXISTS changes jsonb;
-
-UPDATE document_versions
-   SET embedding_model = 'paraphrase-multilingual-MiniLM-L12-v2'
- WHERE embedding_model IS NULL;
 
 ALTER TABLE documents
   ADD COLUMN IF NOT EXISTS fts tsvector
